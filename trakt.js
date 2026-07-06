@@ -113,6 +113,29 @@ function getTraktV3Type() {
 	return "movie";
 }
 
+function bindCinetraktStremioOpenHandlers(element, getStremioUrl) {
+	if (!element || typeof getStremioUrl !== "function") return;
+	if (element.dataset.cinetraktStremioBound === "1") return;
+
+	element.dataset.cinetraktStremioBound = "1";
+
+	element.addEventListener(
+		"click",
+		function (event) {
+			openStremioFromMouseEvent(getStremioUrl(), event);
+		},
+		true,
+	);
+
+	element.addEventListener(
+		"contextmenu",
+		function (event) {
+			openStremioFromMouseEvent(getStremioUrl(), event);
+		},
+		true,
+	);
+}
+
 /*
 	TRAKT V3
 	Version propre :
@@ -180,25 +203,8 @@ function updateEpisodePosterLinkToStremio(stremioUrl) {
 		posterTarget.removeAttribute("rel");
 	}
 
-	if (posterTarget.dataset.watchOnStremioEpisodePosterHandlerReady === "true") return;
-
 	posterTarget.dataset.watchOnStremioEpisodePosterHandlerReady = "true";
-
-	posterTarget.addEventListener(
-		"click",
-		function (e) {
-			openStremioFromMouseEvent(posterTarget.dataset.stremioUrl || stremioUrl, e);
-		},
-		true,
-	);
-
-	posterTarget.addEventListener(
-		"contextmenu",
-		function (e) {
-			openStremioFromMouseEvent(posterTarget.dataset.stremioUrl || stremioUrl, e);
-		},
-		true,
-	);
+	bindCinetraktStremioOpenHandlers(posterTarget, () => posterTarget.dataset.stremioUrl || stremioUrl);
 }
 
 function updatePosterLinkToStremio(stremioUrl) {
@@ -220,25 +226,8 @@ function updatePosterLinkToStremio(stremioUrl) {
 	posterLink.removeAttribute("target");
 	posterLink.removeAttribute("rel");
 
-	if (posterLink.dataset.watchOnStremioPosterHandlerReady === "true") return;
-
 	posterLink.dataset.watchOnStremioPosterHandlerReady = "true";
-
-	posterLink.addEventListener(
-		"click",
-		function (e) {
-			openStremioFromMouseEvent(posterLink.href, e);
-		},
-		true,
-	);
-
-	posterLink.addEventListener(
-		"contextmenu",
-		function (e) {
-			openStremioFromMouseEvent(posterLink.href, e);
-		},
-		true,
-	);
+	bindCinetraktStremioOpenHandlers(posterLink, () => posterLink.href);
 }
 
 function openStremioUrl(stremioUrl) {
@@ -352,7 +341,6 @@ function openStremioWebUrl(stremioUrl) {
 	// en mode popup propre et avec le placement pixel-perfect.
 	// Pas de window.open en fallback : ça crée une fenêtre Chrome normale blanche / avec barre d'adresse.
 	if (!canUseExtensionRuntime()) {
-		console.warn("CineTrakt: extension context invalidated. Recharge l'onglet Trakt.");
 		return;
 	}
 
@@ -372,13 +360,11 @@ function openStremioWebUrl(stremioUrl) {
 					hasRuntimeError = true;
 				}
 
-				if (hasRuntimeError || !response?.ok) {
-					console.warn("CineTrakt: background unavailable. Recharge l'onglet Trakt.");
-				}
+				if (hasRuntimeError || !response?.ok) return;
 			}
 		);
 	} catch (error) {
-		console.warn("CineTrakt: runtime unavailable. Recharge l'onglet Trakt.", error);
+		return;
 	}
 }
 
