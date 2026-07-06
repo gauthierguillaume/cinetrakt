@@ -399,66 +399,6 @@ function openStremioFromMouseEvent(stremioUrl, event) {
 	openStremioWebUrl(stremioUrl);
 }
 
-function createSmallStremioEpisodeButton(className, label) {
-	const stremioButton = document.createElement("button");
-	stremioButton.type = "button";
-	stremioButton.className = className;
-	stremioButton.title = "";
-	stremioButton.removeAttribute("title");
-	stremioButton.setAttribute("aria-label", label);
-
-	stremioButton.innerHTML = `
-		<img
-			src="https://www.stremio.com/website/stremio-logo-small.png"
-			alt=""
-			draggable="false"
-			style="width: 22px; height: 22px; display: block; border-radius: 4px; pointer-events: none;"
-		>
-	`;
-
-	stremioButton.style.width = "28px";
-	stremioButton.style.height = "28px";
-	stremioButton.style.minWidth = "28px";
-	stremioButton.style.minHeight = "28px";
-	stremioButton.style.padding = "0";
-	stremioButton.style.margin = "0 6px 0 0";
-	stremioButton.style.border = "none";
-	stremioButton.style.outline = "none";
-	stremioButton.style.borderRadius = "0";
-	stremioButton.style.background = "transparent";
-	stremioButton.style.display = "inline-flex";
-	stremioButton.style.alignItems = "center";
-	stremioButton.style.justifyContent = "center";
-	stremioButton.style.cursor = "pointer";
-	stremioButton.style.position = "relative";
-	stremioButton.style.zIndex = "999999";
-	stremioButton.style.pointerEvents = "auto";
-	stremioButton.style.opacity = "1";
-	stremioButton.style.filter = "none";
-	stremioButton.style.transition = "transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease";
-
-	stremioButton.addEventListener("mouseenter", function () {
-		if (stremioButton.dataset.stremioReady === "false") return;
-
-		stremioButton.style.opacity = "1";
-		stremioButton.style.transform = "scale(1.12)";
-		stremioButton.style.filter = "brightness(1.15)";
-	});
-
-	stremioButton.addEventListener("mouseleave", function () {
-		stremioButton.style.transform = "scale(1)";
-		stremioButton.style.filter = "none";
-
-		if (stremioButton.classList.contains("watch-on-stremio-continue-btn")) {
-			setStremioButtonVisualReadyState(stremioButton, stremioButton.dataset.stremioReady === "true" && !!stremioButton.dataset.stremioUrl);
-		} else {
-			stremioButton.style.opacity = "1";
-		}
-	});
-
-	return stremioButton;
-}
-
 function setStremioButtonVisualReadyState(button, isReady) {
 	if (!button) return;
 
@@ -713,46 +653,6 @@ function getOwnStremioButtonsInCard(card, className = 'watch-on-stremio-episode-
 	return Array.from(buttons).filter((button) => button.isConnected);
 }
 
-function insertButtonBeforeTraktCheck(checkButton, stremioButton, fallbackCard) {
-	if (!stremioButton || !fallbackCard) return null;
-
-	const ownButtonClass = getButtonActionClass(stremioButton);
-	const isContinueButton = ownButtonClass === 'watch-on-stremio-continue-btn';
-
-	// Continue Watching fonctionne bien avec la vraie zone d'action Trakt.
-	// Les listes d'épisodes/saisons, elles, sont re-rendues et recyclées par Trakt :
-	// on utilise donc toujours notre conteneur absolu stable, calé sur le check réel.
-	const canUseNativeActionButton = isContinueButton && !!(checkButton && checkButton.parentElement);
-	const actionContainer = canUseNativeActionButton
-		? checkButton.parentElement
-		: getOrCreateFallbackEpisodeActionContainer(fallbackCard);
-
-	if (!actionContainer) return null;
-
-	if (ownButtonClass) {
-		getOwnStremioButtonsInCard(fallbackCard, ownButtonClass).forEach((button) => {
-			if (button !== stremioButton) button.remove();
-		});
-	}
-
-	actionContainer.style.display = 'flex';
-	actionContainer.style.alignItems = 'center';
-	actionContainer.style.justifyContent = isContinueButton ? 'flex-end' : 'center';
-	actionContainer.style.gap = isContinueButton ? '6px' : '0';
-
-	if (canUseNativeActionButton && checkButton && checkButton.parentElement === actionContainer) {
-		actionContainer.insertBefore(stremioButton, checkButton);
-	} else if (stremioButton.parentElement !== actionContainer) {
-		actionContainer.appendChild(stremioButton);
-	}
-
-	if (!isContinueButton) {
-		positionFallbackEpisodeActionContainer(fallbackCard, actionContainer);
-	}
-
-	return stremioButton;
-}
-
 function cleanupDuplicateEpisodeStremioButtons(card, expectedUrl = "") {
 	if (!card) return null;
 
@@ -889,21 +789,6 @@ function cleanupAllDuplicateStremioButtons() {
 		});
 	});
 }
-
-function getExistingEpisodeStremioButton(card, stremioUrl) {
-	if (!card) return null;
-
-	const buttons = getOwnStremioButtonsInCard(card, 'watch-on-stremio-episode-btn');
-	const matchingButton = buttons.find((button) => button.dataset.stremioUrl === stremioUrl) || buttons[0] || null;
-
-	buttons.forEach((button) => {
-		if (button !== matchingButton) button.remove();
-	});
-
-	if (matchingButton) matchingButton.classList.add('watch-on-stremio-episode-btn');
-	return matchingButton;
-}
-
 
 const WATCH_ON_STREMIO_EPISODE_LINK_CLASS = "watch-on-stremio-episode-link";
 const WATCH_ON_STREMIO_EPISODE_LINK_STYLE_ID = "watch-on-stremio-episode-link-styles";
