@@ -1,0 +1,63 @@
+{
+  "name": "CineTrakt",
+  "description": "Ajoute des boutons Stremio/Trakt et les couleurs IMDb/Trakt.",
+  "version": "0.4.51",
+  "manifest_version": 3,
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "run_at": "document_idle",
+      "js": [
+        "imdb.js"
+      ],
+      "matches": [
+        "https://www.imdb.com/title/*"
+      ]
+    },
+    {
+      "run_at": "document_idle",
+      "js": [
+        "trakt.js"
+      ],
+      "matches": [
+        "https://app.trakt.tv/*"
+      ]
+    },
+    {
+      "run_at": "document_idle",
+      "js": [
+        "stremio.js"
+      ],
+      "matches": [
+        "https://web.stremio.com/*"
+      ]
+    }
+  ],
+  "permissions": [
+    "tabs",
+    "system.display",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://app.trakt.tv/*",
+    "https://web.stremio.com/*",
+    "https://www.imdb.com/*"
+  ],
+  "icons": {
+    "16": "favicon.png",
+    "32": "favicon.png",
+    "48": "favicon.png",
+    "128": "favicon.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "favicon.png",
+      "32": "favicon.png",
+      "48": "favicon.png",
+      "128": "favicon.png"
+    },
+    "default_title": "CineTrakt"
+  }
+}
