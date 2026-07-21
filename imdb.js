@@ -1,3 +1,7 @@
+function isCineTraktRatingsPopupMode() {
+	return new URLSearchParams(window.location.search).get('cinetrakt_ratings_popup') === '1';
+}
+
 (() => {
 	'use strict';
 
@@ -179,6 +183,10 @@
 	}
 
 	function runImdbButtons() {
+		if (isCineTraktRatingsPopupMode()) {
+			document.querySelector('.trakt-header-btn')?.remove();
+			return;
+		}
 		insertTraktButtonIMDB();
 	}
 
@@ -191,19 +199,22 @@
     'use strict';
 
     const DEBOUNCE_TIME = 250;
-
-    const COLORS = {
-        1:  { bg: '#ef4444', text: '#ffffff' },
-        2:  { bg: '#ef4444', text: '#ffffff' },
-        3:  { bg: '#ef4444', text: '#ffffff' },
-        4:  { bg: '#f97316', text: '#ffffff' },
-        5:  { bg: '#eab308', text: '#111111' },
-        6:  { bg: '#22c55e', text: '#111111' },
-        7:  { bg: '#3b82f6', text: '#ffffff' },
-        8:  { bg: '#ec4899', text: '#ffffff' },
-        9:  { bg: '#8b5cf6', text: '#ffffff' },
-        10: { bg: '#ffffff', text: '#111111' }
-    };
+    const RATINGS_POPUP_PADDING = 16;
+    const RATINGS_POPUP_RESIZE_TOLERANCE = 3;
+    const RATINGS_POPUP_MAX_SEASON_LOADS = 10;
+    const RATINGS_POPUP_SEASON_LOAD_TIMEOUT = 8000;
+    const { getStyleForRating, formatRating, calculateAverage } = globalThis.CineTraktRatingsTable;
+    let ratingsPopupResizeObserver = null;
+    let ratingsPopupMutationObserver = null;
+    let ratingsPopupObservedRoot = null;
+    let ratingsPopupResizeTimer = null;
+    let lastRatingsPopupSize = null;
+    let ratingsPopupInitializationRoot = null;
+    let ratingsPopupInitializationPromise = null;
+    let ratingsPopupInitializationVersion = 0;
+    let popupInitializationComplete = false;
+    let isAutoLoadingSeasons = false;
+    let allSeasonsLoaded = false;
 
     const STYLES = `
         .sg-rating-cell {
@@ -291,6 +302,84 @@
             box-shadow: none !important;
             text-shadow: none !important;
         }
+
+		html.cinetrakt-ratings-popup-mode,
+		body.cinetrakt-ratings-popup-mode {
+			min-height: 100% !important;
+			background: #121212 !important;
+		}
+
+		body.cinetrakt-ratings-popup-mode {
+			box-sizing: border-box !important;
+			margin: 0 !important;
+			padding: ${RATINGS_POPUP_PADDING}px !important;
+			display: flex !important;
+			align-items: flex-start !important;
+			justify-content: center !important;
+			overflow: hidden !important;
+		}
+
+		.cinetrakt-ratings-popup-loading {
+			position: fixed !important;
+			inset: 0 !important;
+			display: flex !important;
+			align-items: center !important;
+			justify-content: center !important;
+			z-index: 2147483647 !important;
+			color: rgba(255, 255, 255, 0.72) !important;
+			background: #121212 !important;
+			font: 500 14px/1.5 Roboto, Arial, sans-serif !important;
+		}
+
+		.cinetrakt-ratings-popup-loading[hidden],
+		.cinetrakt-ratings-popup-hidden {
+			display: none !important;
+		}
+
+		body.cinetrakt-ratings-popup-ready .cinetrakt-ratings-popup-path:not(.cinetrakt-imdb-ratings-popup-content) {
+			box-sizing: border-box !important;
+			display: block !important;
+			width: fit-content !important;
+			min-width: 0 !important;
+			max-width: none !important;
+			margin: 0 !important;
+			padding: 0 !important;
+		}
+
+		.cinetrakt-imdb-ratings-popup-content {
+			box-sizing: border-box !important;
+			width: var(--cinetrakt-ratings-popup-root-width) !important;
+			max-width: calc(100vw - ${RATINGS_POPUP_PADDING * 2}px) !important;
+			max-height: calc(100vh - ${RATINGS_POPUP_PADDING * 2}px) !important;
+			margin: 0 auto !important;
+			overflow-x: hidden !important;
+			overflow-y: auto !important;
+			scrollbar-width: none !important;
+			-ms-overflow-style: none !important;
+			background: #121212 !important;
+		}
+
+		.cinetrakt-imdb-ratings-popup-content [data-testid="heatmap__content"] {
+			width: var(--cinetrakt-ratings-popup-table-width) !important;
+			max-width: none !important;
+			overflow-x: auto !important;
+			overflow-y: hidden !important;
+			scrollbar-width: none !important;
+			-ms-overflow-style: none !important;
+		}
+
+		.cinetrakt-imdb-ratings-popup-content [data-testid="heatmap__seasons-column"],
+		.cinetrakt-imdb-ratings-popup-content [data-sg-avg="true"] {
+			visibility: visible !important;
+			opacity: 1 !important;
+		}
+
+		.cinetrakt-imdb-ratings-popup-content::-webkit-scrollbar,
+		.cinetrakt-imdb-ratings-popup-content [data-testid="heatmap__content"]::-webkit-scrollbar {
+			display: none !important;
+			width: 0 !important;
+			height: 0 !important;
+		}
     `;
 
     function debounce(fn, delay) {
@@ -308,30 +397,6 @@
         style.id = 'sg-styles';
         style.textContent = STYLES;
         document.head.appendChild(style);
-    }
-
-    function getScoreBucket(rating) {
-        if (rating >= 10) return 10;
-        if (rating >= 9) return 9;
-        if (rating >= 8) return 8;
-        if (rating >= 7) return 7;
-        if (rating >= 6) return 6;
-        if (rating >= 5) return 5;
-        if (rating >= 4) return 4;
-        if (rating >= 3) return 3;
-        if (rating >= 2) return 2;
-        return 1;
-    }
-
-    function getStyleForRating(rating) {
-        return COLORS[getScoreBucket(rating)] || COLORS[1];
-    }
-
-    function formatRating(value) {
-        const number = Number(value);
-        if (!Number.isFinite(number)) return '';
-        const fixed = number.toFixed(1);
-        return fixed.endsWith('.0') ? String(Math.round(number)) : fixed;
     }
 
     function parseRatingText(text) {
@@ -462,6 +527,394 @@
             .filter(cell => cell.dataset.sgAvg !== 'true');
     }
 
+	function validateRatingsTableStructure() {
+		const parts = getHeatmapParts();
+		if (!parts || !parts.seasonCells.length || parts.seasonCells.length !== parts.episodeRows.length) return false;
+		const headerHasAverage = !!parts.episodeTable.querySelector('thead tr > th[data-sg-avg="true"]');
+		if (!headerHasAverage) return false;
+
+		return parts.episodeRows.every((row, index) => {
+			const seasonLabel = String(parts.seasonCells[index]?.textContent || '').trim();
+			const averageCell = row.querySelector(':scope > td[data-sg-avg="true"]');
+			return /^S?\s*\d+$/i.test(seasonLabel)
+				&& !!averageCell?.querySelector('.sg-avg-cell-box')
+				&& getEpisodeCells(row).length > 0;
+		});
+	}
+
+    function hasImdbVerificationPage() {
+        const bodyText = String(document.body?.innerText || '').replace(/\s+/g, ' ').toLowerCase();
+        return Boolean(document.querySelector('iframe[src*="captcha" i], [class*="captcha" i], [id*="captcha" i]'))
+            || bodyText.includes('verify that you are not a robot')
+            || bodyText.includes('not a robot')
+            || bodyText.includes('javascript is disabled')
+            || bodyText.includes('robot verification');
+    }
+
+    function getRatingsPopupLoadingElement() {
+        let loading = document.body.querySelector(':scope > .cinetrakt-ratings-popup-loading');
+        if (loading) return loading;
+
+        loading = document.createElement('div');
+        loading.className = 'cinetrakt-ratings-popup-loading';
+        loading.setAttribute('role', 'status');
+        loading.textContent = 'Loading IMDb episode ratings…';
+        document.body.appendChild(loading);
+        return loading;
+    }
+
+    function clearRatingsPopupIsolation() {
+        document.querySelectorAll('.cinetrakt-ratings-popup-hidden').forEach(element => {
+            element.classList.remove('cinetrakt-ratings-popup-hidden');
+        });
+        document.querySelectorAll('.cinetrakt-ratings-popup-path').forEach(element => {
+            element.classList.remove('cinetrakt-ratings-popup-path');
+        });
+		document.querySelectorAll('.cinetrakt-imdb-ratings-popup-content').forEach(element => {
+			element.classList.remove('cinetrakt-imdb-ratings-popup-content');
+			element.style.removeProperty('--cinetrakt-ratings-popup-root-width');
+			element.style.removeProperty('--cinetrakt-ratings-popup-table-width');
+		});
+        document.body.classList.remove('cinetrakt-ratings-popup-ready');
+    }
+
+    function disconnectRatingsPopupObservers() {
+		ratingsPopupResizeObserver?.disconnect();
+		ratingsPopupMutationObserver?.disconnect();
+		ratingsPopupResizeObserver = null;
+		ratingsPopupMutationObserver = null;
+		ratingsPopupObservedRoot = null;
+		lastRatingsPopupSize = null;
+		if (ratingsPopupResizeTimer !== null) {
+			window.clearTimeout(ratingsPopupResizeTimer);
+			ratingsPopupResizeTimer = null;
+		}
+	}
+
+	function configureRatingsPopupContent(root) {
+		const tableViewport = root.querySelector('[data-testid="heatmap__content"]');
+		const seasonTable = root.querySelector('[data-testid="heatmap__seasons-column"]');
+		const episodeTable = root.querySelector('[data-testid="heatmap__episode-data"]');
+		if (!tableViewport || !seasonTable || !episodeTable) return false;
+
+		const rootRect = root.getBoundingClientRect();
+		const tableRect = tableViewport.getBoundingClientRect();
+		const nativeTableWidth = Number(root.dataset.cinetraktPopupNativeTableWidth)
+			|| Math.ceil(tableRect.width);
+		const horizontalControlsWidth = Number(root.dataset.cinetraktPopupHorizontalControlsWidth)
+			|| Math.max(0, Math.ceil(rootRect.width - tableRect.width));
+		root.dataset.cinetraktPopupNativeTableWidth = String(nativeTableWidth);
+		root.dataset.cinetraktPopupHorizontalControlsWidth = String(horizontalControlsWidth);
+
+		// The season table is absolutely positioned inside IMDb's existing left gutter.
+		// The episode table therefore defines the useful viewport width on its own.
+		const intrinsicTableWidth = Math.ceil(episodeTable.scrollWidth);
+		const tableWidth = Math.min(nativeTableWidth, intrinsicTableWidth);
+		root.classList.add('cinetrakt-imdb-ratings-popup-content');
+		root.style.setProperty('--cinetrakt-ratings-popup-table-width', `${tableWidth}px`);
+		root.style.setProperty('--cinetrakt-ratings-popup-root-width', `${tableWidth + horizontalControlsWidth}px`);
+		return true;
+	}
+
+	function requestRatingsPopupWindowSize(size) {
+		try {
+			chrome.runtime.sendMessage({
+				type: 'CINETRAKT_RESIZE_IMDB_RATINGS_POPUP',
+				width: size.width,
+				height: size.height,
+			}, () => {
+				try {
+					void chrome.runtime.lastError;
+				} catch (error) {
+					return;
+				}
+			});
+		} catch (error) {
+			return;
+		}
+	}
+
+	function sendRatingsPopupSize(root) {
+		if (!root.isConnected || root !== ratingsPopupObservedRoot) return;
+
+		const rect = root.getBoundingClientRect();
+		const contentWidth = Math.ceil(Math.max(rect.width, root.scrollWidth));
+		const contentHeight = Math.ceil(Math.max(rect.height, root.scrollHeight));
+		const chromeWidth = Math.max(0, Math.round(window.outerWidth - window.innerWidth));
+		const chromeHeight = Math.max(0, Math.round(window.outerHeight - window.innerHeight));
+		const size = {
+			width: contentWidth + RATINGS_POPUP_PADDING * 2 + chromeWidth,
+			height: contentHeight + RATINGS_POPUP_PADDING * 2 + chromeHeight,
+		};
+
+		if (lastRatingsPopupSize
+			&& Math.abs(lastRatingsPopupSize.width - size.width) <= RATINGS_POPUP_RESIZE_TOLERANCE
+			&& Math.abs(lastRatingsPopupSize.height - size.height) <= RATINGS_POPUP_RESIZE_TOLERANCE) return;
+		lastRatingsPopupSize = size;
+		requestRatingsPopupWindowSize(size);
+	}
+
+	function scheduleRatingsPopupResize(root) {
+		if (ratingsPopupResizeTimer !== null) window.clearTimeout(ratingsPopupResizeTimer);
+		ratingsPopupResizeTimer = window.setTimeout(() => {
+			ratingsPopupResizeTimer = null;
+			if (configureRatingsPopupContent(root)) sendRatingsPopupSize(root);
+		}, 100);
+	}
+
+	function observeRatingsPopupContent(root) {
+		if (ratingsPopupObservedRoot === root) {
+			scheduleRatingsPopupResize(root);
+			return;
+		}
+
+		disconnectRatingsPopupObservers();
+		ratingsPopupObservedRoot = root;
+		if (typeof ResizeObserver === 'function') {
+			ratingsPopupResizeObserver = new ResizeObserver(() => scheduleRatingsPopupResize(root));
+			ratingsPopupResizeObserver.observe(root);
+		}
+		ratingsPopupMutationObserver = new MutationObserver(() => scheduleRatingsPopupResize(root));
+		ratingsPopupMutationObserver.observe(root, { childList: true, subtree: true });
+		scheduleRatingsPopupResize(root);
+	}
+
+	function getRatingsPopupSeasonCount(root) {
+		return root.querySelectorAll('[data-testid="heatmap__seasons-column"] td.ratings-heatmap__table-data').length;
+	}
+
+	function getRatingsPopupLoadMoreButton(root) {
+		return root.querySelector('[data-testid="heatmap__load-seasons"]');
+	}
+
+	function isRatingsPopupLoadMoreButtonReady(button) {
+		return !!button
+			&& !button.hidden
+			&& !button.disabled
+			&& button.getAttribute('aria-disabled') !== 'true';
+	}
+
+	function waitForRatingsPopupSeasonBatch(root, button, previousSeasonCount, initializationVersion) {
+		return new Promise(resolve => {
+			let settled = false;
+			let timeoutId = null;
+			const observer = new MutationObserver(() => {
+				if (initializationVersion !== ratingsPopupInitializationVersion
+					|| root !== ratingsPopupInitializationRoot
+					|| !root.isConnected) {
+					finish(false);
+					return;
+				}
+				if (getRatingsPopupSeasonCount(root) > previousSeasonCount) finish(true);
+			});
+
+			function finish(loaded) {
+				if (settled) return;
+				settled = true;
+				observer.disconnect();
+				if (timeoutId !== null) window.clearTimeout(timeoutId);
+				resolve(loaded);
+			}
+
+			observer.observe(root, { childList: true, subtree: true });
+			timeoutId = window.setTimeout(() => finish(false), RATINGS_POPUP_SEASON_LOAD_TIMEOUT);
+			try {
+				button.click();
+			} catch (error) {
+				finish(false);
+			}
+		});
+	}
+
+	function waitForRatingsPopupSettle() {
+		return new Promise(resolve => window.setTimeout(resolve, 200));
+	}
+
+	function getRatingsPopupStructureSignature(root) {
+		const parts = getHeatmapParts();
+		if (!root.isConnected || !parts || !root.contains(parts.episodeTable)) return '';
+		return [
+			parts.seasonCells.length,
+			parts.episodeRows.length,
+			parts.episodeTable.querySelectorAll('thead th').length,
+			getRatingsPopupLoadMoreButton(root) ? 'more' : 'complete',
+		].join(':');
+	}
+
+	async function waitForStableRatingsPopupStructure(root, initializationVersion) {
+		let previousSignature = '';
+		let stableSamples = 0;
+		for (let attempt = 0; attempt < 8; attempt += 1) {
+			await waitForRatingsPopupSettle();
+			if (initializationVersion !== ratingsPopupInitializationVersion
+				|| root !== ratingsPopupInitializationRoot
+				|| !root.isConnected) return false;
+
+			const signature = getRatingsPopupStructureSignature(root);
+			stableSamples = signature && signature === previousSignature ? stableSamples + 1 : 0;
+			previousSignature = signature;
+			if (stableSamples >= 2) return true;
+		}
+		return false;
+	}
+
+	async function autoLoadAllRatingsPopupSeasons(root, initializationVersion) {
+		isAutoLoadingSeasons = true;
+		allSeasonsLoaded = false;
+
+		for (let iteration = 0; iteration < RATINGS_POPUP_MAX_SEASON_LOADS; iteration += 1) {
+			if (initializationVersion !== ratingsPopupInitializationVersion
+				|| root !== ratingsPopupInitializationRoot
+				|| !root.isConnected) return false;
+
+			const loadMoreButton = getRatingsPopupLoadMoreButton(root);
+			if (!loadMoreButton) {
+				allSeasonsLoaded = true;
+				break;
+			}
+			if (!isRatingsPopupLoadMoreButtonReady(loadMoreButton)) {
+				await waitForRatingsPopupSettle();
+				continue;
+			}
+
+			const previousSeasonCount = getRatingsPopupSeasonCount(root);
+			const loaded = await waitForRatingsPopupSeasonBatch(
+				root,
+				loadMoreButton,
+				previousSeasonCount,
+				initializationVersion,
+			);
+			if (!loaded) break;
+			colorizeHeatmap();
+			await waitForRatingsPopupSettle();
+		}
+
+		if (!getRatingsPopupLoadMoreButton(root)) allSeasonsLoaded = true;
+		isAutoLoadingSeasons = false;
+		return allSeasonsLoaded;
+	}
+
+    function isolateRatingsPopupHeatmap(ratingsRoot) {
+        clearRatingsPopupIsolation();
+
+        let current = ratingsRoot;
+        while (current && current !== document.body) {
+            current.classList.add('cinetrakt-ratings-popup-path');
+            const parent = current.parentElement;
+            if (!parent) break;
+
+            Array.from(parent.children).forEach(sibling => {
+                if (sibling !== current && !sibling.classList.contains('cinetrakt-ratings-popup-loading')) {
+                    sibling.classList.add('cinetrakt-ratings-popup-hidden');
+                }
+            });
+            current = parent;
+        }
+
+        document.body.classList.add('cinetrakt-ratings-popup-ready');
+    }
+
+	function startRatingsPopupInitialization(ratingsRoot, loading) {
+		const initializationVersion = ++ratingsPopupInitializationVersion;
+		ratingsPopupInitializationRoot = ratingsRoot;
+		popupInitializationComplete = false;
+		isAutoLoadingSeasons = false;
+		allSeasonsLoaded = false;
+		disconnectRatingsPopupObservers();
+		isolateRatingsPopupHeatmap(ratingsRoot);
+		configureRatingsPopupContent(ratingsRoot);
+		loading.hidden = false;
+
+		const initialization = (async () => {
+			await autoLoadAllRatingsPopupSeasons(ratingsRoot, initializationVersion);
+			await waitForStableRatingsPopupStructure(ratingsRoot, initializationVersion);
+			if (initializationVersion !== ratingsPopupInitializationVersion
+				|| ratingsRoot !== ratingsPopupInitializationRoot
+				|| !ratingsRoot.isConnected) return;
+
+			colorizeHeatmap();
+			let structureIsValid = false;
+			for (let attempt = 0; attempt < 5; attempt += 1) {
+				structureIsValid = ensureAverageColumn();
+				if (structureIsValid) break;
+				await waitForRatingsPopupSettle();
+			}
+			if (!structureIsValid) return;
+
+			configureRatingsPopupContent(ratingsRoot);
+			popupInitializationComplete = true;
+			ratingsRoot.dataset.cinetraktRatingsPopupReady = '1';
+			observeRatingsPopupContent(ratingsRoot);
+			loading.hidden = true;
+		})();
+
+		ratingsPopupInitializationPromise = initialization;
+		initialization.finally(() => {
+			if (ratingsPopupInitializationPromise === initialization) {
+				ratingsPopupInitializationPromise = null;
+			}
+		});
+	}
+
+    function setupCineTraktRatingsPopupMode() {
+		if (!isCineTraktRatingsPopupMode()) {
+			disconnectRatingsPopupObservers();
+			return;
+		}
+
+        document.documentElement.classList.add('cinetrakt-ratings-popup-mode');
+        document.body.classList.add('cinetrakt-ratings-popup-mode');
+        const loading = getRatingsPopupLoadingElement();
+
+        if (hasImdbVerificationPage()) {
+			disconnectRatingsPopupObservers();
+            clearRatingsPopupIsolation();
+			document.documentElement.classList.remove('cinetrakt-ratings-popup-mode');
+			document.body.classList.remove('cinetrakt-ratings-popup-mode');
+			if (document.body.dataset.cinetraktRatingsVerificationSizeRequested !== 'true') {
+				document.body.dataset.cinetraktRatingsVerificationSizeRequested = 'true';
+				requestRatingsPopupWindowSize({ width: 1000, height: 700 });
+			}
+            loading.hidden = true;
+            return;
+        }
+		delete document.body.dataset.cinetraktRatingsVerificationSizeRequested;
+
+		const ratingsRoot = document.querySelector('[data-testid="heatmap__root-element"]');
+        if (!ratingsRoot || !configureRatingsPopupContent(ratingsRoot)) {
+			if (ratingsRoot !== ratingsPopupInitializationRoot) {
+				ratingsPopupInitializationVersion += 1;
+				ratingsPopupInitializationRoot = null;
+				popupInitializationComplete = false;
+			}
+			disconnectRatingsPopupObservers();
+            clearRatingsPopupIsolation();
+            loading.hidden = false;
+            return;
+        }
+
+		if (ratingsRoot !== ratingsPopupInitializationRoot) {
+			startRatingsPopupInitialization(ratingsRoot, loading);
+			return;
+		}
+
+		if (ratingsPopupInitializationPromise && !popupInitializationComplete) {
+			loading.hidden = false;
+			return;
+		}
+
+		if (!popupInitializationComplete) {
+			startRatingsPopupInitialization(ratingsRoot, loading);
+			return;
+		}
+
+		colorizeHeatmap();
+		ensureAverageColumn();
+		configureRatingsPopupContent(ratingsRoot);
+		observeRatingsPopupContent(ratingsRoot);
+		loading.hidden = true;
+    }
+
     function colorizeHeatmap() {
         const parts = getHeatmapParts();
         if (!parts) return;
@@ -504,19 +957,7 @@
         for (let i = 0; i < rowCount; i++) {
             const row = parts.episodeRows[i];
             const links = Array.from(row.querySelectorAll('td.ratings-heatmap__table-data a'));
-
-            let sum = 0;
-            let count = 0;
-
-            links.forEach(link => {
-                const rating = parseRatingText(link.textContent);
-                if (Number.isFinite(rating)) {
-                    sum += rating;
-                    count++;
-                }
-            });
-
-            results.push(count ? sum / count : null);
+            results.push(calculateAverage(links.map(link => parseRatingText(link.textContent))));
         }
 
         return results;
@@ -526,17 +967,33 @@
         document.querySelectorAll('[data-sg-avg="true"]').forEach(el => el.remove());
     }
 
-    function buildAverageColumn() {
-        const parts = getHeatmapParts();
-        if (!parts) return;
+    function setAverageCellValue(avgBox, average) {
+		avgBox.style.setProperty('background', 'transparent', 'important');
+		avgBox.style.setProperty('background-color', 'transparent', 'important');
+		avgBox.style.setProperty('background-image', 'none', 'important');
+		avgBox.style.setProperty('border', '0', 'important');
+		avgBox.style.setProperty('box-shadow', 'none', 'important');
 
-        removeAverageColumn();
+		if (Number.isFinite(average)) {
+			const displayedAvg = formatRating(average);
+			const style = getStyleForRating(parseRatingText(displayedAvg));
+			avgBox.textContent = displayedAvg;
+			avgBox.style.setProperty('color', style.bg, 'important');
+		} else {
+			avgBox.textContent = '';
+			avgBox.style.setProperty('color', 'transparent', 'important');
+		}
+	}
+
+	function ensureAverageColumn() {
+        const parts = getHeatmapParts();
+        if (!parts) return false;
 
         const averages = calculateAverages();
         const headerRow = parts.episodeTable.querySelector('thead tr');
         const firstHeader = headerRow ? headerRow.querySelector('th') : null;
 
-        if (headerRow && firstHeader) {
+		if (headerRow && firstHeader && !headerRow.querySelector(':scope > th[data-sg-avg="true"]')) {
             const avgHeader = firstHeader.cloneNode(false);
             avgHeader.dataset.sgAvg = 'true';
             avgHeader.classList.add('sg-avg-th', 'sg-avg-header');
@@ -548,40 +1005,31 @@
             const firstRealCell = getEpisodeCells(episodeRow)[0];
             if (!firstRealCell) return;
 
-            const sourceBox = firstRealCell.querySelector('div');
-            if (!sourceBox) return;
+			let avgCell = episodeRow.querySelector(':scope > td[data-sg-avg="true"]');
+			let avgBox = avgCell?.querySelector('.sg-avg-cell-box');
+			if (!avgCell || !avgBox) {
+				const sourceBox = firstRealCell.querySelector('div');
+				if (!sourceBox) return;
+				avgCell?.remove();
+				avgCell = firstRealCell.cloneNode(false);
+				avgCell.dataset.sgAvg = 'true';
+				avgCell.classList.add('sg-avg-td');
+				avgBox = sourceBox.cloneNode(false);
+				avgBox.classList.add('sg-avg-cell-box');
+				avgBox.classList.remove('sg-rating-cell');
+				avgCell.appendChild(avgBox);
+				episodeRow.insertBefore(avgCell, firstRealCell);
+			}
 
-            const avgCell = firstRealCell.cloneNode(false);
-            avgCell.dataset.sgAvg = 'true';
-            avgCell.classList.add('sg-avg-td');
-
-            const avgBox = sourceBox.cloneNode(false);
-            avgBox.classList.add('sg-avg-cell-box');
-            avgBox.classList.remove('sg-rating-cell');
-
-            const avg = averages[index];
-
-            avgBox.style.setProperty('background', 'transparent', 'important');
-            avgBox.style.setProperty('background-color', 'transparent', 'important');
-            avgBox.style.setProperty('background-image', 'none', 'important');
-            avgBox.style.setProperty('border', '0', 'important');
-            avgBox.style.setProperty('box-shadow', 'none', 'important');
-
-            if (Number.isFinite(avg)) {
-                const displayedAvg = formatRating(avg);
-                const roundedAvg = parseRatingText(displayedAvg);
-                const style = getStyleForRating(roundedAvg);
-
-                avgBox.textContent = displayedAvg;
-                avgBox.style.setProperty('color', style.bg, 'important');
-            } else {
-                avgBox.textContent = '';
-                avgBox.style.setProperty('color', 'transparent', 'important');
-            }
-
-            avgCell.appendChild(avgBox);
-            episodeRow.insertBefore(avgCell, firstRealCell);
+			setAverageCellValue(avgBox, averages[index]);
         });
+
+		return validateRatingsTableStructure();
+    }
+
+    function buildAverageColumn() {
+		removeAverageColumn();
+		return ensureAverageColumn();
     }
 
     function colorizeHistogram() {
@@ -892,6 +1340,11 @@
     }
 
     function runUpdates() {
+		if (isCineTraktRatingsPopupMode()) {
+			setupCineTraktRatingsPopupMode();
+			return;
+		}
+
         removeOldElements();
         colorizeHeatmap();
         colorizeHistogram();
@@ -901,6 +1354,11 @@
 
     function init() {
         injectStyles();
+		if (isCineTraktRatingsPopupMode()) {
+			document.documentElement.classList.add('cinetrakt-ratings-popup-mode');
+			document.body.classList.add('cinetrakt-ratings-popup-mode');
+			getRatingsPopupLoadingElement();
+		}
         runUpdates();
 
         const lazyUpdate = debounce(runUpdates, DEBOUNCE_TIME);

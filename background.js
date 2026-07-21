@@ -1,4 +1,8 @@
 const STREMIO_WEB_WINDOW_KEY = "watchOnStremioWebWindowId";
+const IMDB_RATINGS_WINDOW_KEY = "cinetraktImdbRatingsWindowId";
+const IMDB_RATINGS_MIN_WIDTH = 500;
+const IMDB_RATINGS_MIN_HEIGHT = 300;
+const IMDB_RATINGS_SCREEN_MARGIN = 40;
 const POPUP_MIN_WIDTH = 560;
 const POPUP_MAX_WIDTH = 760;
 const POPUP_DEFAULT_WIDTH = 610;
@@ -37,6 +41,20 @@ function saveWindowId(windowId) {
 
 function forgetWindowId() {
 	chrome.storage.local.remove(STREMIO_WEB_WINDOW_KEY);
+}
+
+function getSavedImdbRatingsWindowId(callback) {
+	chrome.storage.local.get(IMDB_RATINGS_WINDOW_KEY, (result) => {
+		callback(result?.[IMDB_RATINGS_WINDOW_KEY]);
+	});
+}
+
+function saveImdbRatingsWindowId(windowId) {
+	chrome.storage.local.set({ [IMDB_RATINGS_WINDOW_KEY]: windowId });
+}
+
+function forgetImdbRatingsWindowId() {
+	chrome.storage.local.remove(IMDB_RATINGS_WINDOW_KEY);
 }
 
 function getWindowCenter(win) {
@@ -381,7 +399,165 @@ function openOrReuseStremioWindow(url, layout, sender, sendResponse) {
 	});
 }
 
+function getImdbRatingsPopupLayout(displayBounds) {
+	const displayWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
+	const displayHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
+	const width = Math.min(1320, Math.max(1, displayWidth - IMDB_RATINGS_SCREEN_MARGIN * 2));
+	const height = Math.min(900, Math.max(1, displayHeight - IMDB_RATINGS_SCREEN_MARGIN * 2));
+
+	return {
+		left: Math.round(Number(displayBounds.left) || 0) + Math.floor((displayWidth - width) / 2),
+		top: Math.round(Number(displayBounds.top) || 0) + Math.floor((displayHeight - height) / 2),
+		width,
+		height,
+	};
+}
+
+function getResizedImdbRatingsPopupLayout(displayBounds, requestedWidth, requestedHeight) {
+	const displayWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
+	const displayHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
+	const maxWidth = Math.max(1, displayWidth - IMDB_RATINGS_SCREEN_MARGIN * 2);
+	const maxHeight = Math.max(1, displayHeight - IMDB_RATINGS_SCREEN_MARGIN * 2);
+	const minWidth = Math.min(IMDB_RATINGS_MIN_WIDTH, maxWidth);
+	const minHeight = Math.min(IMDB_RATINGS_MIN_HEIGHT, maxHeight);
+	const width = clampNumber(Math.round(Number(requestedWidth) || minWidth), minWidth, maxWidth);
+	const height = clampNumber(Math.round(Number(requestedHeight) || minHeight), minHeight, maxHeight);
+
+	return {
+		left: Math.round(Number(displayBounds.left) || 0) + Math.floor((displayWidth - width) / 2),
+		top: Math.round(Number(displayBounds.top) || 0) + Math.floor((displayHeight - height) / 2),
+		width,
+		height,
+	};
+}
+
+function getImdbRatingsPopupUrl(imdbId) {
+	return `https://www.imdb.com/title/${imdbId}/ratings/?cinetrakt_ratings_popup=1`;
+}
+
+function getImdbIdFromRatingsUrl(url) {
+	return String(url || "").match(/\/title\/(tt\d{7,})\/ratings\/?/i)?.[1] || "";
+}
+
+function focusImdbRatingsWindow(windowId, sendResponse) {
+	safeWindowUpdate(windowId, { focused: true }, (ok) => {
+		sendResponse({ ok: !!ok, windowId });
+	});
+}
+
+function createImdbRatingsPopup(imdbId, layout, sendResponse) {
+	chrome.windows.create({
+		url: getImdbRatingsPopupUrl(imdbId),
+		type: "popup",
+		left: layout.left,
+		top: layout.top,
+		width: layout.width,
+		height: layout.height,
+		focused: true,
+	}, (newWindow) => {
+		if (readLastError() || !newWindow?.id) {
+			sendResponse({ ok: false });
+			return;
+		}
+
+		saveImdbRatingsWindowId(newWindow.id);
+		sendResponse({ ok: true, windowId: newWindow.id });
+	});
+}
+
+function reuseImdbRatingsPopup(existingWindow, imdbId, layout, sendResponse) {
+	const tab = existingWindow.tabs?.[0];
+	if (!tab?.id) {
+		forgetImdbRatingsWindowId();
+		createImdbRatingsPopup(imdbId, layout, sendResponse);
+		return;
+	}
+
+	const currentImdbId = getImdbIdFromRatingsUrl(tab.url);
+	const isPopupUrl = String(tab.url || "").includes("cinetrakt_ratings_popup=1");
+	if (currentImdbId === imdbId && isPopupUrl) {
+		safeTabUpdate(tab.id, { active: true }, () => {
+			focusImdbRatingsWindow(existingWindow.id, sendResponse);
+		});
+		return;
+	}
+
+	safeTabUpdate(tab.id, { url: getImdbRatingsPopupUrl(imdbId), active: true }, (ok) => {
+		if (!ok) {
+			forgetImdbRatingsWindowId();
+			createImdbRatingsPopup(imdbId, layout, sendResponse);
+			return;
+		}
+		focusImdbRatingsWindow(existingWindow.id, sendResponse);
+	});
+}
+
+function resizeImdbRatingsPopup(message, sender, sendResponse) {
+	const senderWindowId = sender?.tab?.windowId;
+	const senderUrl = sender?.tab?.url || sender?.url || "";
+	const requestedWidth = Number(message.width);
+	const requestedHeight = Number(message.height);
+	if (!senderWindowId
+		|| !senderUrl.includes("cinetrakt_ratings_popup=1")
+		|| !Number.isFinite(requestedWidth)
+		|| !Number.isFinite(requestedHeight)) {
+		sendResponse({ ok: false });
+		return;
+	}
+
+	getSavedImdbRatingsWindowId((savedWindowId) => {
+		if (savedWindowId !== senderWindowId) {
+			sendResponse({ ok: false });
+			return;
+		}
+
+		getDisplayBoundsForSource(sender, null, (displayBounds) => {
+			const layout = getResizedImdbRatingsPopupLayout(displayBounds, requestedWidth, requestedHeight);
+			safeWindowUpdate(senderWindowId, { ...layout, state: "normal" }, (ok) => {
+				sendResponse({ ok: !!ok, windowId: senderWindowId, layout: ok ? layout : undefined });
+			});
+		});
+	});
+}
+
+function openOrReuseImdbRatingsWindow(imdbId, layout, sendResponse) {
+	getSavedImdbRatingsWindowId((savedWindowId) => {
+		if (!savedWindowId) {
+			createImdbRatingsPopup(imdbId, layout, sendResponse);
+			return;
+		}
+
+		chrome.windows.get(savedWindowId, { populate: true }, (existingWindow) => {
+			if (readLastError() || !existingWindow?.id) {
+				forgetImdbRatingsWindowId();
+				createImdbRatingsPopup(imdbId, layout, sendResponse);
+				return;
+			}
+			reuseImdbRatingsPopup(existingWindow, imdbId, layout, sendResponse);
+		});
+	});
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type === "CINETRAKT_RESIZE_IMDB_RATINGS_POPUP") {
+		resizeImdbRatingsPopup(message, sender, sendResponse);
+		return true;
+	}
+
+	if (message?.type === "CINETRAKT_OPEN_IMDB_RATINGS_POPUP") {
+		const imdbId = String(message.imdbId || "");
+		const senderUrl = sender?.tab?.url || sender?.url || "";
+		if (!/^tt\d{7,}$/.test(imdbId) || !senderUrl.startsWith("https://app.trakt.tv/")) {
+			sendResponse({ ok: false });
+			return false;
+		}
+
+		getDisplayBoundsForSource(sender, message.screenBounds, (displayBounds) => {
+			openOrReuseImdbRatingsWindow(imdbId, getImdbRatingsPopupLayout(displayBounds), sendResponse);
+		});
+		return true;
+	}
+
 	if (message?.type !== "WATCH_ON_STREMIO_OPEN_WEB" || !message.url) return false;
 
 	getDisplayBoundsForSource(sender, message.screenBounds, (displayBounds) => {
@@ -395,5 +571,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.windows.onRemoved.addListener((windowId) => {
 	getSavedWindowId((savedWindowId) => {
 		if (savedWindowId === windowId) forgetWindowId();
+	});
+	getSavedImdbRatingsWindowId((savedWindowId) => {
+		if (savedWindowId === windowId) forgetImdbRatingsWindowId();
 	});
 });
