@@ -1926,6 +1926,61 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 		.wos-trakt-ratings-toggle[data-expanded="true"] svg {
 			transform: rotate(180deg) !important;
 		}
+
+		.wos-imdb-ratings-popup-button {
+			appearance: none !important;
+			box-sizing: border-box !important;
+			display: inline-flex !important;
+			align-items: center !important;
+			justify-content: center !important;
+			flex: 0 0 auto !important;
+			width: 38px !important;
+			height: 24px !important;
+			margin: 0 0 0 6px !important;
+			padding: 0 !important;
+			border: 0 !important;
+			border-radius: 0 !important;
+			color: rgba(255, 255, 255, 0.52) !important;
+			background: transparent !important;
+			box-shadow: none !important;
+			outline: none !important;
+			cursor: pointer !important;
+			transition: color 140ms ease !important;
+		}
+
+		.wos-imdb-ratings-popup-button:hover {
+			color: rgba(255, 255, 255, 0.8) !important;
+			background: transparent !important;
+			border: 0 !important;
+			box-shadow: none !important;
+		}
+
+		.wos-imdb-ratings-popup-button:focus-visible {
+			outline: 1px solid rgba(255, 255, 255, 0.72) !important;
+			outline-offset: 2px !important;
+		}
+
+		.wos-imdb-ratings-popup-button svg {
+			display: block !important;
+			width: 31px !important;
+			height: 15px !important;
+			pointer-events: none !important;
+		}
+
+		.wos-imdb-ratings-popup-button rect {
+			fill: currentColor !important;
+			transition: fill 160ms ease !important;
+		}
+
+		.wos-imdb-ratings-popup-button:hover .wos-grid-blue { fill: #3b82f6 !important; }
+		.wos-imdb-ratings-popup-button:hover .wos-grid-green { fill: #22c55e !important; }
+		.wos-imdb-ratings-popup-button:hover .wos-grid-yellow { fill: #eab308 !important; }
+		.wos-imdb-ratings-popup-button:hover .wos-grid-pink { fill: #ec4899 !important; }
+		.wos-imdb-ratings-popup-button:hover .wos-grid-purple { fill: #8b5cf6 !important; }
+
+		.wos-imdb-ratings-popup-button[hidden] {
+			display: none !important;
+		}
 	`;
 	document.head.appendChild(style);
 }
@@ -1948,9 +2003,90 @@ function getWatchOnStremioTraktRatingItems(summaryRatings) {
 
 	return Array.from(summaryRatings.children).filter((child) => {
 		if (child.classList?.contains('wos-trakt-ratings-toggle')) return false;
+		if (child.classList?.contains('wos-imdb-ratings-popup-button')) return false;
 		if (child.matches?.('rating, [class*="rating"]')) return true;
 		return !!child.querySelector?.('[class*="rating-value"], a[href*="imdb.com/title/"]');
 	});
+}
+
+function getWatchOnStremioImdbRatingsId(summaryRatings) {
+	const imdbLink = summaryRatings?.querySelector('a[href*="imdb.com/title/tt"]');
+	const imdbFromRatings = imdbLink?.href?.match(/tt\d{7,}/i)?.[0];
+	if (imdbFromRatings) return imdbFromRatings;
+
+	const showSlug = getShowSlugFromTraktUrl(window.location.href);
+	return getCachedTraktImdbId(showSlug) || getImdbIdFromPage() || '';
+}
+
+function openWatchOnStremioImdbRatingsPopup(imdbId) {
+	if (!/^tt\d{7,}$/.test(imdbId) || !canUseExtensionRuntime()) return;
+
+	try {
+		chrome.runtime.sendMessage({
+			type: 'CINETRAKT_OPEN_IMDB_RATINGS_POPUP',
+			imdbId,
+			screenBounds: getCurrentScreenBoundsForPopup(),
+		}, () => {
+			try {
+				void chrome.runtime.lastError;
+			} catch (error) {
+				return;
+			}
+		});
+	} catch (error) {
+		return;
+	}
+}
+
+function createWatchOnStremioImdbRatingsPopupButton(imdbId) {
+	const button = document.createElement('button');
+	button.type = 'button';
+	button.className = 'wos-imdb-ratings-popup-button';
+	button.dataset.imdbId = imdbId;
+	button.setAttribute('aria-label', 'Open IMDb episode ratings');
+	button.setAttribute('title', 'Open IMDb episode ratings');
+	button.innerHTML = `
+		<svg viewBox="0 0 31 15" width="31" height="15" aria-hidden="true" focusable="false">
+			<rect class="wos-grid-blue" x="0" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="4" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-yellow" x="8" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-pink" x="12" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-purple" x="16" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-blue" x="20" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="24" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-yellow" x="28" y="0" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-pink" x="0" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-purple" x="4" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-blue" x="8" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="12" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-yellow" x="16" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-pink" x="20" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-purple" x="24" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-blue" x="28" y="4" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="0" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-yellow" x="4" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-pink" x="8" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-purple" x="12" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-blue" x="16" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="20" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-yellow" x="24" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-pink" x="28" y="8" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-purple" x="0" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-blue" x="4" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="8" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-yellow" x="12" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-pink" x="16" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-purple" x="20" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-blue" x="24" y="12" width="3" height="3" rx="0.75"></rect>
+			<rect class="wos-grid-green" x="28" y="12" width="3" height="3" rx="0.75"></rect>
+		</svg>
+	`;
+	button.addEventListener('click', (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		openWatchOnStremioImdbRatingsPopup(button.dataset.imdbId || '');
+	});
+	return button;
 }
 
 function createWatchOnStremioTraktRatingsToggle(summaryRatings) {
@@ -2023,8 +2159,35 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 		toggle = createWatchOnStremioTraktRatingsToggle(summaryRatings);
 	}
 
-	if (toggle.previousElementSibling !== imdbItem) {
+	const isShowPage = /^\/shows\/[^/]+\/?$/.test(window.location.pathname);
+	let popupButton = summaryRatings.querySelector(':scope > .wos-imdb-ratings-popup-button');
+	const imdbId = isShowPage ? getWatchOnStremioImdbRatingsId(summaryRatings) : '';
+
+	if (popupButton && (!imdbId || popupButton.dataset.imdbId !== imdbId)) {
+		popupButton.remove();
+		popupButton = null;
+	}
+	if (imdbId && !popupButton) {
+		popupButton = createWatchOnStremioImdbRatingsPopupButton(imdbId);
+	}
+
+	if (popupButton) {
+		if (popupButton.previousElementSibling !== imdbItem) {
+			imdbItem.insertAdjacentElement('afterend', popupButton);
+		}
+		if (toggle.previousElementSibling !== popupButton) {
+			popupButton.insertAdjacentElement('afterend', toggle);
+		}
+	} else if (toggle.previousElementSibling !== imdbItem) {
 		imdbItem.insertAdjacentElement('afterend', toggle);
+	}
+
+	if (isShowPage && !imdbId && summaryRatings.dataset.cinetraktImdbIdRequestedRoute !== window.location.pathname) {
+		const route = window.location.pathname;
+		summaryRatings.dataset.cinetraktImdbIdRequestedRoute = route;
+		getImdbIdFromTraktShowUrl(window.location.href).then((resolvedImdbId) => {
+			if (resolvedImdbId && window.location.pathname === route) scheduleRunStremioButtons(0);
+		});
 	}
 
 	if (!summaryRatings.dataset.watchOnStremioRatingsExpanded) {

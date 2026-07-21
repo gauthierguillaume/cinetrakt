@@ -10,10 +10,12 @@
     {
       "run_at": "document_idle",
       "js": [
+        "ratings-table.js",
         "imdb.js"
       ],
       "matches": [
-        "https://www.imdb.com/title/*"
+        "https://www.imdb.com/title/*",
+        "https://www.imdb.com/*/title/*"
       ]
     },
     {
