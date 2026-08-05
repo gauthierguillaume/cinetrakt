@@ -295,5 +295,8 @@
 		}, STOP_AFTER_MS);
 	}
 
-	start();
+	globalThis.CineTraktSettings.ready.then(() => {
+		if (!globalThis.CineTraktSettings.isEnabled('stremioCompactPanel')) return;
+		start();
+	});
 })();

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>CineTrakt</title>
+		<link rel="icon" href="favicon.png">
+		<link rel="stylesheet" href="newtab.css">
+	</head>
+	<body>
+		<main id="media-view" class="media-view" aria-busy="true">
+			<a id="poster-link" class="poster-panel" href="#" target="_blank" rel="noopener noreferrer" aria-label="Ouvrir ce titre sur Trakt">
+				<img id="poster-image" alt="">
+			</a>
+
+			<section class="artwork-panel" aria-label="Artworks du titre">
+				<button id="artwork-button" class="artwork-button" type="button" aria-label="Afficher l'artwork suivant">
+					<img id="artwork-image" alt="">
+				</button>
+			</section>
+		</main>
+
+		<div id="loading-state" class="loading-state" role="status" aria-label="Chargement d'un titre">
+			<span class="spinner" aria-hidden="true"></span>
+		</div>
+		<div id="error-state" class="error-state" role="alert" aria-label="Impossible de charger TMDB" hidden>
+			<button id="retry-button" class="retry-button" type="button" aria-label="Reessayer"></button>
+		</div>
+
+		<script src="settings.js"></script>
+		<script src="newtab.js"></script>
+	</body>
+</html>
