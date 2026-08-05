@@ -1,35 +1,17 @@
-importScripts("settings.js");
+importScripts("settings.js", "extension-protocol.js", "stremio-url.js", "window-layout.js");
+
+const {
+	getFallbackDisplayBounds,
+	getImdbRatingsPopupLayout,
+	getPopupLayout,
+	getResizedImdbRatingsPopupLayout,
+	pickBestDisplayForWindow,
+} = globalThis.CineTraktWindowLayout;
+const { isStremioWebUrl } = globalThis.CineTraktStremioUrls;
+const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
 
 const STREMIO_WEB_WINDOW_KEY = "watchOnStremioWebWindowId";
 const IMDB_RATINGS_WINDOW_KEY = "cinetraktImdbRatingsWindowId";
-const IMDB_RATINGS_MIN_WIDTH = 500;
-const IMDB_RATINGS_MIN_HEIGHT = 300;
-const IMDB_RATINGS_SCREEN_MARGIN = 40;
-const POPUP_MIN_WIDTH = 560;
-const POPUP_MAX_WIDTH = 760;
-const POPUP_DEFAULT_WIDTH = 610;
-const SOURCE_MIN_WIDTH = 900;
-
-// Pas de débordement volontaire hors écran : ça évite le pixel qui fuit sur les autres moniteurs.
-// On met juste Trakt 8 px sous Stremio pour masquer la bordure invisible de Chrome entre les deux.
-const WINDOW_SEAM_OVERLAP = 15;
-
-// Petits ajustements manuels pour compenser les bordures invisibles de Chrome/Windows.
-// Version prudente : on corrige seulement de quelques pixels pour tester.
-const SNAP_EDGE_LEFT_FIX = -7;
-const SNAP_EDGE_TOP_FIX = -6;
-const SNAP_EDGE_RIGHT_FIX = 8;
-const SNAP_EDGE_BOTTOM_FIX = 8;
-
-// Ajustements fins :
-// - Trakt est décalé de 1 px vers la droite via SNAP_EDGE_LEFT_FIX.
-// - Le bord droit de Stremio rentre de 1 px, sans toucher à son bord gauche.
-// - Trakt et Stremio restent ajustés seulement sur l’axe vertical demandé.
-const POPUP_INNER_RIGHT_FIX = 1;
-
-function clampNumber(value, min, max) {
-	return Math.max(min, Math.min(max, value));
-}
 
 function getSavedWindowId(callback) {
 	chrome.storage.local.get(STREMIO_WEB_WINDOW_KEY, (result) => {
@@ -57,81 +39,6 @@ function saveImdbRatingsWindowId(windowId) {
 
 function forgetImdbRatingsWindowId() {
 	chrome.storage.local.remove(IMDB_RATINGS_WINDOW_KEY);
-}
-
-function getWindowCenter(win) {
-	return {
-		x: (Number(win.left) || 0) + (Number(win.width) || 0) / 2,
-		y: (Number(win.top) || 0) + (Number(win.height) || 0) / 2,
-	};
-}
-
-function getIntersectionArea(a, b) {
-	const left = Math.max(a.left, b.left);
-	const top = Math.max(a.top, b.top);
-	const right = Math.min(a.left + a.width, b.left + b.width);
-	const bottom = Math.min(a.top + a.height, b.top + b.height);
-	return Math.max(0, right - left) * Math.max(0, bottom - top);
-}
-
-function pickBestDisplayForWindow(win, displays) {
-	if (!Array.isArray(displays) || !displays.length) return null;
-
-	const sourceBounds = {
-		left: Number(win.left) || 0,
-		top: Number(win.top) || 0,
-		width: Number(win.width) || 0,
-		height: Number(win.height) || 0,
-	};
-
-	let bestDisplay = displays[0];
-	let bestScore = -1;
-
-	for (const display of displays) {
-		const area = display.workArea || display.bounds;
-		const displayBounds = {
-			left: area.left,
-			top: area.top,
-			width: area.width,
-			height: area.height,
-		};
-		const score = getIntersectionArea(sourceBounds, displayBounds);
-		if (score > bestScore) {
-			bestScore = score;
-			bestDisplay = display;
-		}
-	}
-
-	if (bestScore > 0) return bestDisplay;
-
-	const center = getWindowCenter(sourceBounds);
-	return displays.find((display) => {
-		const area = display.workArea || display.bounds;
-		return (
-			center.x >= area.left &&
-			center.x < area.left + area.width &&
-			center.y >= area.top &&
-			center.y < area.top + area.height
-		);
-	}) || bestDisplay;
-}
-
-function getFallbackDisplayBounds(sourceWindow, screenBounds) {
-	if (screenBounds?.availWidth && screenBounds?.availHeight) {
-		return {
-			left: Math.round(Number(screenBounds.availLeft) || 0),
-			top: Math.round(Number(screenBounds.availTop) || 0),
-			width: Math.round(Number(screenBounds.availWidth) || 1920),
-			height: Math.round(Number(screenBounds.availHeight) || 1080),
-		};
-	}
-
-	return {
-		left: Math.round(Number(sourceWindow?.left) || 0),
-		top: Math.round(Number(sourceWindow?.top) || 0),
-		width: Math.round(Number(sourceWindow?.width) || 1920),
-		height: Math.round(Number(sourceWindow?.height) || 1080),
-	};
 }
 
 function getDisplayBoundsForSource(sender, screenBounds, callback) {
@@ -170,43 +77,6 @@ function getDisplayBoundsForSource(sender, screenBounds, callback) {
 	});
 }
 
-function getPopupLayout(displayBounds) {
-	const rawWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
-	const rawHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
-	const rawLeft = Math.round(Number(displayBounds.left) || 0);
-	const rawTop = Math.round(Number(displayBounds.top) || 0);
-
-	const left = rawLeft + SNAP_EDGE_LEFT_FIX;
-	const top = rawTop + SNAP_EDGE_TOP_FIX;
-	const width = rawWidth + Math.abs(SNAP_EDGE_LEFT_FIX) + SNAP_EDGE_RIGHT_FIX;
-	const height = rawHeight + Math.abs(SNAP_EDGE_TOP_FIX) + SNAP_EDGE_BOTTOM_FIX;
-
-	const maxPopupWidth = Math.min(POPUP_MAX_WIDTH, Math.floor(width * 0.36));
-	const popupWidth = clampNumber(POPUP_DEFAULT_WIDTH, POPUP_MIN_WIDTH, maxPopupWidth);
-	const seamOverlap = Math.min(WINDOW_SEAM_OVERLAP, Math.max(0, width - popupWidth - SOURCE_MIN_WIDTH));
-
-	// Le popup reste strictement dans la zone utile de l'écran.
-	const popupLeft = left + width - popupWidth;
-	const adjustedPopupLeft = popupLeft;
-	const adjustedPopupWidth = Math.max(1, popupWidth - POPUP_INNER_RIGHT_FIX);
-	const traktWidth = Math.max(SOURCE_MIN_WIDTH, width - popupWidth + seamOverlap);
-
-	return {
-		trakt: {
-			left,
-			top,
-			width: traktWidth,
-			height,
-		},
-		popup: {
-			left: adjustedPopupLeft,
-			top,
-			width: adjustedPopupWidth,
-			height,
-		},
-	};
-}
-
 function readLastError() {
 	return chrome.runtime.lastError || null;
 }
@@ -243,7 +113,7 @@ function safeTabUpdate(tabId, updateInfo, callback) {
 	});
 }
 
-function normalizeWindow(windowId, bounds, callback, options = {}) {
+function normalizeWindowFast(windowId, bounds, callback) {
 	if (!windowId || !bounds) {
 		callback?.(false);
 		return;
@@ -257,51 +127,18 @@ function normalizeWindow(windowId, bounds, callback, options = {}) {
 		focused: false,
 	};
 
-	const passes = Number.isFinite(options.passes) ? options.passes : 3;
-	const firstDelay = Number.isFinite(options.firstDelay) ? options.firstDelay : 120;
-	const passDelay = Number.isFinite(options.passDelay) ? options.passDelay : 120;
-
-	const applyWanted = (passesLeft) => {
-		if (passesLeft <= 0) {
-			callback?.(true);
-			return;
-		}
-
-		safeWindowUpdate(windowId, { ...wanted, state: "normal" }, (ok) => {
-			if (!ok) {
-				callback?.(false);
-				return;
-			}
-
-			setTimeout(() => applyWanted(passesLeft - 1), passDelay);
-		});
-	};
-
 	safeWindowUpdate(windowId, { state: "normal", focused: false }, (ok) => {
 		if (!ok) {
 			callback?.(false);
 			return;
 		}
 
-		setTimeout(() => applyWanted(passes), firstDelay);
+		setTimeout(() => {
+			safeWindowUpdate(windowId, { ...wanted, state: "normal" }, (boundsApplied) => {
+				callback?.(boundsApplied);
+			});
+		}, 0);
 	});
-}
-
-function normalizeWindowFast(windowId, bounds, callback) {
-	// Première passe rapide : le but est que la fenêtre arrive déjà au bon endroit
-	// avant de naviguer vers Stremio, pour éviter l'effet « ça s'ouvre puis ça bouge ».
-	normalizeWindow(windowId, bounds, callback, { passes: 1, firstDelay: 0, passDelay: 0 });
-}
-
-function resizeSourceWindow(sender, layout) {
-	if (!sender?.tab?.windowId || !layout?.trakt) return;
-	normalizeWindow(sender.tab.windowId, layout.trakt, () => {});
-}
-
-function focusSourceTab(sender) {
-	if (!sender?.tab?.id || !sender?.tab?.windowId) return;
-	safeTabUpdate(sender.tab.id, { active: true }, () => {});
-	safeWindowUpdate(sender.tab.windowId, { focused: true }, () => {});
 }
 
 function focusStremioWindow(windowId, sendResponse) {
@@ -399,38 +236,6 @@ function openOrReuseStremioWindow(url, layout, sender, sendResponse) {
 			moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendResponse);
 		});
 	});
-}
-
-function getImdbRatingsPopupLayout(displayBounds) {
-	const displayWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
-	const displayHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
-	const width = Math.min(1320, Math.max(1, displayWidth - IMDB_RATINGS_SCREEN_MARGIN * 2));
-	const height = Math.min(900, Math.max(1, displayHeight - IMDB_RATINGS_SCREEN_MARGIN * 2));
-
-	return {
-		left: Math.round(Number(displayBounds.left) || 0) + Math.floor((displayWidth - width) / 2),
-		top: Math.round(Number(displayBounds.top) || 0) + Math.floor((displayHeight - height) / 2),
-		width,
-		height,
-	};
-}
-
-function getResizedImdbRatingsPopupLayout(displayBounds, requestedWidth, requestedHeight) {
-	const displayWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
-	const displayHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
-	const maxWidth = Math.max(1, displayWidth - IMDB_RATINGS_SCREEN_MARGIN * 2);
-	const maxHeight = Math.max(1, displayHeight - IMDB_RATINGS_SCREEN_MARGIN * 2);
-	const minWidth = Math.min(IMDB_RATINGS_MIN_WIDTH, maxWidth);
-	const minHeight = Math.min(IMDB_RATINGS_MIN_HEIGHT, maxHeight);
-	const width = clampNumber(Math.round(Number(requestedWidth) || minWidth), minWidth, maxWidth);
-	const height = clampNumber(Math.round(Number(requestedHeight) || minHeight), minHeight, maxHeight);
-
-	return {
-		left: Math.round(Number(displayBounds.left) || 0) + Math.floor((displayWidth - width) / 2),
-		top: Math.round(Number(displayBounds.top) || 0) + Math.floor((displayHeight - height) / 2),
-		width,
-		height,
-	};
 }
 
 function getImdbRatingsPopupUrl(imdbId) {
@@ -541,12 +346,12 @@ function openOrReuseImdbRatingsWindow(imdbId, layout, sendResponse) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-	if (message?.type === "CINETRAKT_RESIZE_IMDB_RATINGS_POPUP") {
+	if (message?.type === MESSAGE_TYPES.RESIZE_IMDB_RATINGS_POPUP) {
 		resizeImdbRatingsPopup(message, sender, sendResponse);
 		return true;
 	}
 
-	if (message?.type === "CINETRAKT_OPEN_IMDB_RATINGS_POPUP") {
+	if (message?.type === MESSAGE_TYPES.OPEN_IMDB_RATINGS_POPUP) {
 		const imdbId = String(message.imdbId || "");
 		const senderUrl = sender?.tab?.url || sender?.url || "";
 		if (!/^tt\d{7,}$/.test(imdbId) || !senderUrl.startsWith("https://app.trakt.tv/")) {
@@ -560,7 +365,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		return true;
 	}
 
-	if (message?.type !== "WATCH_ON_STREMIO_OPEN_WEB" || !message.url) return false;
+	if (message?.type !== MESSAGE_TYPES.OPEN_STREMIO_WEB || !message.url) return false;
+	const senderUrl = sender?.tab?.url || sender?.url || "";
+	if (!senderUrl.startsWith("https://app.trakt.tv/") || !isStremioWebUrl(message.url)) {
+		sendResponse({ ok: false });
+		return false;
+	}
 
 	getDisplayBoundsForSource(sender, message.screenBounds, (displayBounds) => {
 		const layout = getPopupLayout(displayBounds);

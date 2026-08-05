@@ -166,17 +166,31 @@
 		resetButton.disabled = true;
 		status.className = '';
 		status.textContent = 'Enregistrement…';
-		await Promise.all([
-			settings.save(currentValues),
-			settings.saveTmdbCredential(currentTmdbCredential),
-		]);
-		savedValues = { ...currentValues };
-		savedTmdbCredential = currentTmdbCredential;
-		const reloaded = await reloadActiveSupportedTab();
-		status.className = 'success';
-		status.textContent = reloaded ? 'Enregistre. Onglet actualise.' : 'Enregistre. Actualisez le site concerne.';
-		resetButton.disabled = false;
-		updateSummary();
+
+		try {
+			await Promise.all([
+				settings.save(currentValues),
+				settings.saveTmdbCredential(currentTmdbCredential),
+			]);
+			savedValues = { ...currentValues };
+			savedTmdbCredential = currentTmdbCredential;
+
+			let reloaded = false;
+			try {
+				reloaded = await reloadActiveSupportedTab();
+			} catch {
+				// Saving succeeded; a closed or restricted tab only prevents auto-refresh.
+			}
+
+			status.className = 'success';
+			status.textContent = reloaded ? 'Enregistre. Onglet actualise.' : 'Enregistre. Actualisez le site concerne.';
+		} catch {
+			status.className = 'error';
+			status.textContent = 'Enregistrement impossible. Rechargez l’extension puis reessayez.';
+		} finally {
+			resetButton.disabled = false;
+			updateSummary();
+		}
 	});
 
 	renderFeatures();

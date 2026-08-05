@@ -13,6 +13,7 @@
         "trakt-early.css"
       ],
       "js": [
+        "settings.js",
         "trakt-bootstrap.js"
       ],
       "matches": [
@@ -23,7 +24,13 @@
       "run_at": "document_idle",
       "js": [
         "settings.js",
-        "ratings-table.js",
+        "rating-utils.js",
+        "extension-protocol.js",
+        "dom-runtime.js",
+        "imdb-runtime.js",
+        "imdb-page.js",
+        "imdb-trakt-button.js",
+        "imdb-ratings.js",
         "imdb.js"
       ],
       "matches": [
@@ -34,7 +41,19 @@
     {
       "run_at": "document_idle",
       "js": [
-        "settings.js",
+        "rating-utils.js",
+        "extension-protocol.js",
+        "stremio-url.js",
+        "stremio-open.js",
+        "trakt-imdb-cache.js",
+        "spotify-protocol.js",
+        "dom-runtime.js",
+        "trakt-runtime.js",
+        "trakt-stremio-ui.js",
+        "trakt-ratings.js",
+        "trakt-poster-layout.js",
+        "trakt-soundtrack.js",
+        "trakt-customizations.js",
         "trakt.js"
       ],
       "matches": [
@@ -56,6 +75,7 @@
       "all_frames": true,
       "js": [
         "settings.js",
+        "spotify-protocol.js",
         "spotify-embed.js"
       ],
       "matches": [

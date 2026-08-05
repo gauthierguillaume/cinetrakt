@@ -6,7 +6,16 @@
 	const MAX_DISCOVER_PAGE = 250;
 	const MAX_MEDIA_ATTEMPTS = 8;
 	const MIN_VOTE_COUNT = 200;
+	const REQUEST_TIMEOUT_MS = 12000;
 	const settings = globalThis.CineTraktSettings;
+	const {
+		getBackdropPaths,
+		getImagePreferences,
+		getMediaConfiguration,
+		getPreferredPosterPath,
+		isBearerToken,
+		shuffle,
+	} = globalThis.CineTraktTmdbUtils;
 
 	const mediaView = document.getElementById('media-view');
 	const loadingState = document.getElementById('loading-state');
@@ -21,10 +30,6 @@
 	let backdrops = [];
 	let currentBackdropIndex = 0;
 
-	function isBearerToken(value) {
-		return /^eyJ[A-Za-z0-9._-]+$/.test(value) || value.length > 80;
-	}
-
 	async function fetchTmdb(path, parameters = {}) {
 		const url = new URL(`${API_BASE}${path}`);
 		Object.entries(parameters).forEach(([key, value]) => {
@@ -38,64 +43,21 @@
 			url.searchParams.set('api_key', tmdbCredential);
 		}
 
-		const response = await fetch(url, { headers });
-		if (!response.ok) {
-			const details = await response.json().catch(() => ({}));
-			throw new Error(details.status_message || `TMDB request failed: ${response.status}`);
+		const controller = new AbortController();
+		const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+		try {
+			const response = await fetch(url, { headers, signal: controller.signal });
+			if (!response.ok) {
+				const details = await response.json().catch(() => ({}));
+				throw new Error(details.status_message || `TMDB request failed: ${response.status}`);
+			}
+			return response.json();
+		} finally {
+			window.clearTimeout(timeout);
 		}
-		return response.json();
 	}
 
-	function shuffle(items) {
-		const result = [...items];
-		for (let index = result.length - 1; index > 0; index -= 1) {
-			const target = Math.floor(Math.random() * (index + 1));
-			[result[index], result[target]] = [result[target], result[index]];
-		}
-		return result;
-	}
-
-	function sortImagesByQuality(images) {
-		return [...images].sort((left, right) => {
-			const voteDifference = (right.vote_count || 0) - (left.vote_count || 0);
-			if (voteDifference) return voteDifference;
-			const ratingDifference = (right.vote_average || 0) - (left.vote_average || 0);
-			if (ratingDifference) return ratingDifference;
-			return (right.width || 0) - (left.width || 0);
-		});
-	}
-
-	function getImagePreferences(originalLanguage) {
-		return originalLanguage === 'fr'
-			? { apiLanguage: 'fr-FR', includedLanguages: 'fr,null,en', posterLanguages: ['fr', null, 'en'] }
-			: { apiLanguage: 'en-US', includedLanguages: 'en,null', posterLanguages: ['en', null] };
-	}
-
-	function getPreferredPosterPath(details, posterLanguages) {
-		const posters = Array.isArray(details.images?.posters) ? details.images.posters : [];
-		for (const language of posterLanguages) {
-			const candidate = sortImagesByQuality(posters.filter((image) => image.iso_639_1 === language))[0];
-			if (candidate?.file_path) return candidate.file_path;
-		}
-		return '';
-	}
-
-	function getBackdropPaths(details) {
-		const imagePaths = Array.isArray(details.images?.backdrops)
-			? sortImagesByQuality(details.images.backdrops).map((image) => image.file_path)
-			: [];
-		if (details.backdrop_path) imagePaths.unshift(details.backdrop_path);
-		return [...new Set(imagePaths.filter(Boolean))];
-	}
-
-	function getMediaConfiguration(mediaType) {
-		return mediaType === 'tv'
-			? { detailsPath: 'tv', discoverPath: '/discover/tv', traktPath: 'shows' }
-			: { detailsPath: 'movie', discoverPath: '/discover/movie', traktPath: 'movies' };
-	}
-
-	async function findRandomMedia() {
-		const mediaType = Math.random() < 0.5 ? 'movie' : 'tv';
+	async function findRandomMediaByType(mediaType) {
 		const configuration = getMediaConfiguration(mediaType);
 		const discoverParameters = {
 			include_adult: false,
@@ -133,6 +95,16 @@
 			}
 		}
 
+		return null;
+	}
+
+	async function findRandomMedia() {
+		const firstType = Math.random() < 0.5 ? 'movie' : 'tv';
+		const mediaTypes = [firstType, firstType === 'movie' ? 'tv' : 'movie'];
+		for (const mediaType of mediaTypes) {
+			const media = await findRandomMediaByType(mediaType);
+			if (media) return media;
+		}
 		throw new Error('No compatible TMDB title found.');
 	}
 
