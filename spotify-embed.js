@@ -1,10 +1,11 @@
 (() => {
 	if (window.top === window) return;
 
-	const MESSAGE_TYPE = 'cinetrakt:spotify-embed-metadata';
-	const PLAYBACK_STATE_MESSAGE_TYPE = 'cinetrakt:spotify-embed-playback-state';
-	const READY_MESSAGE_TYPE = 'cinetrakt:spotify-embed-ready';
-	const PLAY_REQUEST_TYPE = 'cinetrakt:spotify-embed-play';
+	const {
+		MESSAGE_TYPES,
+		SPOTIFY_ORIGIN,
+		TRAKT_ORIGIN,
+	} = globalThis.CineTraktSpotifyProtocol;
 	let lastPayloadKey = '';
 	let lastPlaybackState = '';
 	let publishTimer = null;
@@ -31,10 +32,10 @@
 		if (playbackState === 'unknown' || playbackState === lastPlaybackState) return;
 		lastPlaybackState = playbackState;
 		window.top.postMessage({
-			type: PLAYBACK_STATE_MESSAGE_TYPE,
+			type: MESSAGE_TYPES.PLAYBACK_STATE,
 			embedUrl: window.location.href,
 			playbackState,
-		}, 'https://app.trakt.tv');
+		}, TRAKT_ORIGIN);
 	}
 
 	function getLargestSpotifyCover() {
@@ -68,7 +69,7 @@
 		if (!coverUrl || !title || !artist) return;
 
 		const payload = {
-			type: MESSAGE_TYPE,
+			type: MESSAGE_TYPES.METADATA,
 			embedUrl: window.location.href,
 			coverUrl,
 			title,
@@ -78,7 +79,7 @@
 		const payloadKey = `${coverUrl}|${title}|${artist}`;
 		if (payloadKey === lastPayloadKey) return;
 		lastPayloadKey = payloadKey;
-		window.top.postMessage(payload, 'https://app.trakt.tv');
+		window.top.postMessage(payload, TRAKT_ORIGIN);
 	}
 
 	function scheduleSpotifyMetadataPublish(delay = 80) {
@@ -87,9 +88,9 @@
 	}
 
 	function handleSpotifyPlayRequest(event) {
-		if (event.origin !== 'https://app.trakt.tv'
+		if (event.origin !== TRAKT_ORIGIN
 			|| event.source !== window.top
-			|| event.data?.type !== PLAY_REQUEST_TYPE) return;
+			|| event.data?.type !== MESSAGE_TYPES.PLAY_REQUEST) return;
 
 		const control = findSpotifyPlaybackControl();
 		if (!control || getSpotifyPlaybackState() !== 'paused') {
@@ -105,9 +106,9 @@
 	globalThis.CineTraktSettings.ready.then(() => {
 		if (!globalThis.CineTraktSettings.isEnabled('traktSoundtrack')) return;
 		window.top.postMessage({
-			type: READY_MESSAGE_TYPE,
+			type: MESSAGE_TYPES.READY,
 			embedUrl: window.location.href,
-		}, 'https://app.trakt.tv');
+		}, TRAKT_ORIGIN);
 
 		const observer = new MutationObserver(() => scheduleSpotifyMetadataPublish());
 		observer.observe(document.documentElement, {

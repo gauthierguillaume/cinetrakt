@@ -1,5 +1,10 @@
 # CineTrakt Project Audit
 
+> Historical snapshot: this audit describes the project before the modular runtime
+> refactor. Several findings below, including the large `trakt.js` file and the lack
+> of automated tests, have since been addressed. See [architecture.md](architecture.md)
+> for the current structure and verification rules.
+
 ## Summary
 
 CineTrakt is a compact Chrome Manifest V3 extension related to Trakt, IMDb, and Stremio. It injects content scripts on Trakt, IMDb title pages, and Stremio Web, and uses a background service worker to open or reuse a dedicated Stremio Web popup.

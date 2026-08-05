@@ -20,14 +20,15 @@
 	const ACTIVE_CLASS = 'wos-stremio-panel-active';
 	const ROOT_CLASS = 'wos-stremio-panel-root';
 	const HIDDEN_CLASS = 'wos-stremio-panel-hidden';
-	const CHECK_INTERVAL_MS = 250;
-	const STOP_AFTER_MS = 45000;
+	const DISCOVERY_RETRY_DELAYS = Object.freeze([80, 160, 320, 640, 1200, 2400, 4000]);
 
-	let lastUrl = '';
 	let lastPanel = null;
 	let lastRouteKey = '';
 	let lastKnownScrollTop = 0;
 	let scheduled = false;
+	let retryTimer = null;
+	let retryIndex = 0;
+	let animationFrame = null;
 
 	function hasPanelFlag() {
 		try {
@@ -132,10 +133,10 @@
 		document.documentElement.classList.remove(ACTIVE_CLASS);
 
 		if (resetTracking) {
-			lastUrl = '';
 			lastPanel = null;
 			lastRouteKey = '';
 			lastKnownScrollTop = 0;
+			retryIndex = 0;
 		}
 	}
 
@@ -235,7 +236,6 @@
 			return false;
 		}
 
-		const currentUrl = location.href;
 		const routeKey = getRouteKey();
 		const routeChanged = routeKey !== lastRouteKey;
 		const panelChanged = panelRoot !== lastPanel;
@@ -257,42 +257,63 @@
 			panelRoot.scrollTop = lastKnownScrollTop;
 		}
 
-		lastUrl = currentUrl;
 		lastRouteKey = routeKey;
 		lastPanel = panelRoot;
 
 		return true;
 	}
 
+	function clearDiscoveryRetry() {
+		window.clearTimeout(retryTimer);
+		retryTimer = null;
+	}
+
+	function scheduleDiscoveryRetry() {
+		if (retryTimer !== null || retryIndex >= DISCOVERY_RETRY_DELAYS.length) return;
+		const delay = DISCOVERY_RETRY_DELAYS[retryIndex];
+		retryIndex += 1;
+		retryTimer = window.setTimeout(() => {
+			retryTimer = null;
+			scheduleApply();
+		}, delay);
+	}
+
 	function scheduleApply() {
 		if (scheduled) return;
 		scheduled = true;
-		requestAnimationFrame(() => {
+		animationFrame = requestAnimationFrame(() => {
+			animationFrame = null;
 			scheduled = false;
-			applyPanel();
+			if (applyPanel()) {
+				clearDiscoveryRetry();
+				retryIndex = 0;
+			} else if (isDetailRoute()) {
+				scheduleDiscoveryRetry();
+			}
 		});
 	}
 
 	function start() {
-		let intervalId = null;
-		let stopTimeoutId = null;
-
 		const observer = new MutationObserver(scheduleApply);
 		observer.observe(document.documentElement, { childList: true, subtree: true });
 
-		window.addEventListener('hashchange', () => {
+		const handleRouteChange = () => {
+			clearDiscoveryRetry();
 			clearPanelState({ resetTracking: true });
 			scheduleApply();
-		});
+		};
+		window.addEventListener('hashchange', handleRouteChange);
+		window.addEventListener('popstate', handleRouteChange);
+		globalThis.navigation?.addEventListener('currententrychange', handleRouteChange);
 
 		window.addEventListener('resize', scheduleApply, { passive: true });
+		window.addEventListener('pagehide', () => {
+			observer.disconnect();
+			clearDiscoveryRetry();
+			if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+		}, { once: true });
 
-		applyPanel();
-		intervalId = window.setInterval(applyPanel, CHECK_INTERVAL_MS);
-		stopTimeoutId = window.setTimeout(() => {
-			window.clearInterval(intervalId);
-			window.clearTimeout(stopTimeoutId);
-		}, STOP_AFTER_MS);
+		scheduleApply();
 	}
 
 	globalThis.CineTraktSettings.ready.then(() => {

@@ -54,20 +54,56 @@
 		listeners.forEach((listener) => listener(snapshot));
 	}
 
-	const ready = new Promise((resolve) => {
-		const storageKeys = canReadPrivateSettings ? [STORAGE_KEY, TMDB_CREDENTIAL_KEY] : [STORAGE_KEY];
-		chrome.storage.local.get(storageKeys, (result) => {
-			values = normalize(result?.[STORAGE_KEY]);
-			tmdbCredential = typeof result?.[TMDB_CREDENTIAL_KEY] === 'string'
-				? result[TMDB_CREDENTIAL_KEY].trim()
-				: '';
-			loaded = true;
-			resolve({ ...values });
-			notify();
-		});
-	});
+	function getRuntimeErrorMessage() {
+		try {
+			return chrome.runtime?.lastError?.message || '';
+		} catch {
+			return 'Extension context unavailable.';
+		}
+	}
 
-	chrome.storage.onChanged.addListener((changes, areaName) => {
+	function readStorage(keys) {
+		return new Promise((resolve) => {
+			try {
+				chrome.storage.local.get(keys, (result) => {
+					resolve(getRuntimeErrorMessage() ? {} : (result || {}));
+				});
+			} catch {
+				resolve({});
+			}
+		});
+	}
+
+	function writeStorage(entries) {
+		return new Promise((resolve, reject) => {
+			try {
+				chrome.storage.local.set(entries, () => {
+					const errorMessage = getRuntimeErrorMessage();
+					if (errorMessage) {
+						reject(new Error(errorMessage));
+						return;
+					}
+					resolve();
+				});
+			} catch (error) {
+				reject(error);
+			}
+		});
+	}
+
+	const ready = (async () => {
+		const storageKeys = canReadPrivateSettings ? [STORAGE_KEY, TMDB_CREDENTIAL_KEY] : [STORAGE_KEY];
+		const result = await readStorage(storageKeys);
+		values = normalize(result?.[STORAGE_KEY]);
+		tmdbCredential = typeof result?.[TMDB_CREDENTIAL_KEY] === 'string'
+			? result[TMDB_CREDENTIAL_KEY].trim()
+			: '';
+		loaded = true;
+		notify();
+		return { ...values };
+	})();
+
+	function handleStorageChanges(changes, areaName) {
 		if (areaName !== 'local') return;
 		if (changes[STORAGE_KEY]) {
 			values = normalize(changes[STORAGE_KEY].newValue);
@@ -79,7 +115,13 @@
 				? changes[TMDB_CREDENTIAL_KEY].newValue.trim()
 				: '';
 		}
-	});
+	}
+
+	try {
+		chrome.storage.onChanged.addListener(handleStorageChanges);
+	} catch {
+		// A content script from a previous extension version can outlive its context.
+	}
 
 	globalThis.CineTraktSettings = Object.freeze({
 		STORAGE_KEY,
@@ -101,15 +143,11 @@
 		},
 		save(nextValues) {
 			const normalized = normalize(nextValues);
-			return new Promise((resolve) => {
-				chrome.storage.local.set({ [STORAGE_KEY]: normalized }, () => resolve({ ...normalized }));
-			});
+			return writeStorage({ [STORAGE_KEY]: normalized }).then(() => ({ ...normalized }));
 		},
 		saveTmdbCredential(nextCredential) {
 			const normalized = String(nextCredential || '').trim();
-			return new Promise((resolve) => {
-				chrome.storage.local.set({ [TMDB_CREDENTIAL_KEY]: normalized }, () => resolve(normalized));
-			});
+			return writeStorage({ [TMDB_CREDENTIAL_KEY]: normalized }).then(() => normalized);
 		},
 		onChange(listener) {
 			listeners.add(listener);
