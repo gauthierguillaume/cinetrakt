@@ -5,6 +5,10 @@ console.log("CineTrakt: Extension loaded");
  */
 let watchOnStremioTraktLinkProtectorReady = false;
 
+function isCinetraktFeatureEnabled(key) {
+	return globalThis.CineTraktSettings?.isEnabled(key) !== false;
+}
+
 function isWatchOnStremioOwnButton(element) {
 	if (!element) return false;
 
@@ -778,7 +782,9 @@ function cleanupAllDuplicateStremioButtons() {
 
 const WATCH_ON_STREMIO_EPISODE_LINK_CLASS = "watch-on-stremio-episode-link";
 const WATCH_ON_STREMIO_EPISODE_LINK_STYLE_ID = "watch-on-stremio-episode-link-styles";
+const WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS = "watch-on-stremio-episode-link-group-active";
 let watchOnStremioEpisodeLinkClickReady = false;
+let watchOnStremioEpisodeLinkGroupSequence = 0;
 
 function injectWatchOnStremioEpisodeLinkStyles() {
 	if (document.getElementById(WATCH_ON_STREMIO_EPISODE_LINK_STYLE_ID)) return;
@@ -797,7 +803,8 @@ function injectWatchOnStremioEpisodeLinkStyles() {
 		}
 
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:hover,
-		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:focus-visible {
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:focus-visible,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} {
 			color: #a855f7 !important;
 			text-decoration: none !important;
 			text-decoration-line: none !important;
@@ -832,6 +839,29 @@ function setupWatchOnStremioEpisodeLinkClickHandler() {
 		openStremioFromMouseEvent(stremioUrl, event);
 	}
 
+	function getEpisodeLink(target) {
+		return target instanceof Element
+			? target.closest(`.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}`)
+			: null;
+	}
+
+	function setEpisodeLinkGroupActive(link, active) {
+		const groupId = link?.dataset.watchOnStremioEpisodeGroup;
+		if (!groupId) return;
+
+		document.querySelectorAll(`.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}`).forEach((candidate) => {
+			if (candidate.dataset.watchOnStremioEpisodeGroup === groupId) {
+				candidate.classList.toggle(WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS, active);
+			}
+		});
+	}
+
+	function isSameEpisodeLinkGroup(link, relatedTarget) {
+		const relatedLink = getEpisodeLink(relatedTarget);
+		return !!relatedLink
+			&& relatedLink.dataset.watchOnStremioEpisodeGroup === link?.dataset.watchOnStremioEpisodeGroup;
+	}
+
 	document.addEventListener("pointerdown", (event) => {
 		if (event.button !== 0) return;
 		handle(event);
@@ -846,6 +876,26 @@ function setupWatchOnStremioEpisodeLinkClickHandler() {
 		event.preventDefault();
 		event.stopPropagation();
 		event.stopImmediatePropagation();
+	}, true);
+
+	document.addEventListener("pointerover", (event) => {
+		setEpisodeLinkGroupActive(getEpisodeLink(event.target), true);
+	}, true);
+
+	document.addEventListener("pointerout", (event) => {
+		const link = getEpisodeLink(event.target);
+		if (!link || isSameEpisodeLinkGroup(link, event.relatedTarget)) return;
+		setEpisodeLinkGroupActive(link, false);
+	}, true);
+
+	document.addEventListener("focusin", (event) => {
+		setEpisodeLinkGroupActive(getEpisodeLink(event.target), true);
+	}, true);
+
+	document.addEventListener("focusout", (event) => {
+		const link = getEpisodeLink(event.target);
+		if (!link || isSameEpisodeLinkGroup(link, event.relatedTarget)) return;
+		setEpisodeLinkGroupActive(link, false);
 	}, true);
 }
 
@@ -875,7 +925,47 @@ function findNearestEpisodeContext(element) {
 	return element?.parentElement || null;
 }
 
-function makeSeasonEpisodeElementClickable(element, episodeData, stremioUrl) {
+function getInnermostEpisodeSpoilerTextElement(spoiler) {
+	if (!spoiler) return null;
+	const spoilerText = getCleanText(spoiler.textContent);
+	if (!spoilerText) return null;
+
+	return [spoiler, ...spoiler.querySelectorAll('span, p, div')]
+		.filter((candidate) => getCleanText(candidate.textContent) === spoilerText)
+		.map((candidate) => ({ candidate, rect: candidate.getBoundingClientRect() }))
+		.filter(({ rect }) => rect.width > 0 && rect.height > 0)
+		.sort((a, b) => (a.rect.width * a.rect.height) - (b.rect.width * b.rect.height))[0]?.candidate || spoiler;
+}
+
+function getSeasonEpisodeClickableTargets(element, context = null) {
+	if (!element) return [];
+
+	const episodePattern = /S\s*\d+\s*[•·.-]\s*E\s*\d+/i;
+	const episodeRect = element.getBoundingClientRect();
+	const boundary = element.closest('a[href*="/shows/"]') || context || element.parentElement;
+	const spoilerSelectors = 'trakt-spoiler, [data-spoiler], [class*="spoiler"], [style*="blur"]';
+	const spoilerCandidates = boundary ? [...boundary.querySelectorAll(spoilerSelectors)] : [];
+
+	const blurredTitle = spoilerCandidates
+		.map(getInnermostEpisodeSpoilerTextElement)
+		.filter((candidate) => {
+			if (!candidate || candidate === element || candidate.contains(element)) return false;
+			const text = getCleanText(candidate.textContent);
+			if (!text || episodePattern.test(text) || text.length > 120) return false;
+			const rect = candidate.getBoundingClientRect();
+			return rect.width > 0 && rect.height > 0
+				&& Math.abs((rect.top + rect.height / 2) - (episodeRect.top + episodeRect.height / 2)) <= 24;
+		})
+		.sort((a, b) => {
+			const aRect = a.getBoundingClientRect();
+			const bRect = b.getBoundingClientRect();
+			return Math.abs(aRect.left - episodeRect.right) - Math.abs(bRect.left - episodeRect.right);
+		})[0] || null;
+
+	return blurredTitle ? [element, blurredTitle] : [element];
+}
+
+function makeSeasonEpisodeElementClickable(element, episodeData, stremioUrl, groupId = "") {
 	if (!element || !episodeData || !stremioUrl) return;
 
 	injectWatchOnStremioEpisodeLinkStyles();
@@ -886,6 +976,7 @@ function makeSeasonEpisodeElementClickable(element, episodeData, stremioUrl) {
 	element.dataset.stremioUrl = stremioUrl;
 	element.dataset.watchOnStremioSeason = String(episodeData.season);
 	element.dataset.watchOnStremioEpisode = String(episodeData.episode);
+	if (groupId) element.dataset.watchOnStremioEpisodeGroup = groupId;
 	element.setAttribute("role", "link");
 	element.setAttribute("tabindex", "0");
 	element.setAttribute("aria-label", `Open S${episodeData.season}E${episodeData.episode} in Stremio`);
@@ -899,6 +990,18 @@ function makeSeasonEpisodeElementClickable(element, episodeData, stremioUrl) {
 			openStremioFromMouseEvent(element.dataset.stremioUrl, event);
 		}, true);
 	}
+}
+
+function makeSeasonEpisodeTargetsClickable(elements, episodeData, stremioUrl) {
+	const targets = (Array.isArray(elements) ? elements : [elements])
+		.filter((element) => element instanceof Element);
+	if (!targets.length) return;
+
+	const existingGroupId = targets
+		.map((element) => element.dataset.watchOnStremioEpisodeGroup)
+		.find(Boolean);
+	const groupId = existingGroupId || `cinetrakt-episode-${++watchOnStremioEpisodeLinkGroupSequence}`;
+	targets.forEach((element) => makeSeasonEpisodeElementClickable(element, episodeData, stremioUrl, groupId));
 }
 
 function getSeasonEpisodeTextTargets(root = document.body) {
@@ -929,7 +1032,11 @@ function linkifySeasonEpisodeTextsWithKnownImdbId(imdbId) {
 		if (!episodeData) return;
 
 		const stremioEpisodeUrl = buildStremioEpisodeUrl(imdbId, episodeData.season, episodeData.episode);
-		makeSeasonEpisodeElementClickable(element, episodeData, stremioEpisodeUrl);
+		makeSeasonEpisodeTargetsClickable(
+			getSeasonEpisodeClickableTargets(element),
+			episodeData,
+			stremioEpisodeUrl
+		);
 	});
 }
 
@@ -1479,24 +1586,28 @@ function isCardInContinueWatchingArea(card) {
 }
 
 
-function prepareSeasonEpisodeTextLinkFromShowUrl(element, episodeData, showUrl) {
-	if (!element || !episodeData || !showUrl) return;
+function prepareSeasonEpisodeTextLinkFromShowUrl(elements, episodeData, showUrl) {
+	const targets = (Array.isArray(elements) ? elements : [elements]).filter(Boolean);
+	if (targets.length === 0 || !episodeData || !showUrl) return;
 
 	const showSlug = getShowSlugFromTraktUrl(showUrl);
 	if (!showSlug) return;
 
 	const cachedImdbId = getCachedTraktImdbId(showSlug);
 	if (cachedImdbId) {
-		makeSeasonEpisodeElementClickable(element, episodeData, buildStremioEpisodeUrl(cachedImdbId, episodeData.season, episodeData.episode));
+		const stremioUrl = buildStremioEpisodeUrl(cachedImdbId, episodeData.season, episodeData.episode);
+		makeSeasonEpisodeTargetsClickable(targets, episodeData, stremioUrl);
 		return;
 	}
 
-	if (element.dataset.watchOnStremioLinkPrepareStarted === "true") return;
-	element.dataset.watchOnStremioLinkPrepareStarted = "true";
+	const preparationTarget = targets[0];
+	if (preparationTarget.dataset.watchOnStremioLinkPrepareStarted === "true") return;
+	preparationTarget.dataset.watchOnStremioLinkPrepareStarted = "true";
 
 	getImdbIdFromTraktShowUrl(showUrl).then((imdbId) => {
 		if (!imdbId) return;
-		makeSeasonEpisodeElementClickable(element, episodeData, buildStremioEpisodeUrl(imdbId, episodeData.season, episodeData.episode));
+		const stremioUrl = buildStremioEpisodeUrl(imdbId, episodeData.season, episodeData.episode);
+		makeSeasonEpisodeTargetsClickable(targets, episodeData, stremioUrl);
 	}).catch((error) => {
 		console.log("CineTrakt: episode text link prepare failed:", error);
 	});
@@ -1518,7 +1629,11 @@ function linkifyContinueWatchingSeasonEpisodeTexts() {
 		const showUrl = getBestShowLinkFromCard(context);
 		if (!showUrl) return;
 
-		prepareSeasonEpisodeTextLinkFromShowUrl(element, episodeData, showUrl);
+		prepareSeasonEpisodeTextLinkFromShowUrl(
+			getSeasonEpisodeClickableTargets(element, context),
+			episodeData,
+			showUrl,
+		);
 	});
 }
 
@@ -1965,6 +2080,9 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 			width: 31px !important;
 			height: 15px !important;
 			pointer-events: none !important;
+			transform: scale(1) !important;
+			transform-origin: center !important;
+			transition: transform 140ms ease !important;
 		}
 
 		.wos-imdb-ratings-popup-button rect {
@@ -1972,11 +2090,16 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 			transition: fill 160ms ease !important;
 		}
 
-		.wos-imdb-ratings-popup-button:hover .wos-grid-blue { fill: #3b82f6 !important; }
-		.wos-imdb-ratings-popup-button:hover .wos-grid-green { fill: #22c55e !important; }
-		.wos-imdb-ratings-popup-button:hover .wos-grid-yellow { fill: #eab308 !important; }
-		.wos-imdb-ratings-popup-button:hover .wos-grid-pink { fill: #ec4899 !important; }
-		.wos-imdb-ratings-popup-button:hover .wos-grid-purple { fill: #8b5cf6 !important; }
+		.wos-imdb-ratings-popup-button .wos-grid-blue { fill: #3b82f6 !important; }
+		.wos-imdb-ratings-popup-button .wos-grid-green { fill: #22c55e !important; }
+		.wos-imdb-ratings-popup-button .wos-grid-yellow { fill: #eab308 !important; }
+		.wos-imdb-ratings-popup-button .wos-grid-pink { fill: #ec4899 !important; }
+		.wos-imdb-ratings-popup-button .wos-grid-purple { fill: #8b5cf6 !important; }
+
+		.wos-imdb-ratings-popup-button:hover svg,
+		.wos-imdb-ratings-popup-button:focus-visible svg {
+			transform: scale(1.1) !important;
+		}
 
 		.wos-imdb-ratings-popup-button[hidden] {
 			display: none !important;
@@ -2148,6 +2271,8 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	const ratingItems = getWatchOnStremioTraktRatingItems(summaryRatings);
 	const imdbItem = ratingItems.find(isWatchOnStremioImdbRatingItem);
 	if (!imdbItem) return;
+	const ratingsToggleEnabled = isCinetraktFeatureEnabled('traktRatingsToggle');
+	const ratingsPopupEnabled = isCinetraktFeatureEnabled('imdbEpisodeRatingsPopup');
 
 	// L'IMDb doit être à gauche. Les autres notes restent juste après le bouton quand on les affiche.
 	if (summaryRatings.firstElementChild !== imdbItem) {
@@ -2155,13 +2280,16 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	}
 
 	let toggle = summaryRatings.querySelector(':scope > .wos-trakt-ratings-toggle');
-	if (!toggle) {
+	if (!ratingsToggleEnabled) {
+		toggle?.remove();
+		toggle = null;
+	} else if (!toggle) {
 		toggle = createWatchOnStremioTraktRatingsToggle(summaryRatings);
 	}
 
 	const isShowPage = /^\/shows\/[^/]+\/?$/.test(window.location.pathname);
 	let popupButton = summaryRatings.querySelector(':scope > .wos-imdb-ratings-popup-button');
-	const imdbId = isShowPage ? getWatchOnStremioImdbRatingsId(summaryRatings) : '';
+	const imdbId = isShowPage && ratingsPopupEnabled ? getWatchOnStremioImdbRatingsId(summaryRatings) : '';
 
 	if (popupButton && (!imdbId || popupButton.dataset.imdbId !== imdbId)) {
 		popupButton.remove();
@@ -2175,14 +2303,15 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 		if (popupButton.previousElementSibling !== imdbItem) {
 			imdbItem.insertAdjacentElement('afterend', popupButton);
 		}
-		if (toggle.previousElementSibling !== popupButton) {
+		if (toggle && toggle.previousElementSibling !== popupButton) {
 			popupButton.insertAdjacentElement('afterend', toggle);
 		}
-	} else if (toggle.previousElementSibling !== imdbItem) {
+	} else if (toggle && toggle.previousElementSibling !== imdbItem) {
 		imdbItem.insertAdjacentElement('afterend', toggle);
 	}
 
-	if (isShowPage && !imdbId && summaryRatings.dataset.cinetraktImdbIdRequestedRoute !== window.location.pathname) {
+	if (ratingsPopupEnabled && isShowPage && !imdbId
+		&& summaryRatings.dataset.cinetraktImdbIdRequestedRoute !== window.location.pathname) {
 		const route = window.location.pathname;
 		summaryRatings.dataset.cinetraktImdbIdRequestedRoute = route;
 		getImdbIdFromTraktShowUrl(window.location.href).then((resolvedImdbId) => {
@@ -2190,13 +2319,20 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 		});
 	}
 
-	if (!summaryRatings.dataset.watchOnStremioRatingsExpanded) {
+	if (ratingsToggleEnabled && !summaryRatings.dataset.watchOnStremioRatingsExpanded) {
 		summaryRatings.dataset.watchOnStremioRatingsExpanded = 'false';
 	}
 
-	updateWatchOnStremioTraktRatingsVisibility(summaryRatings);
+	if (ratingsToggleEnabled) {
+		updateWatchOnStremioTraktRatingsVisibility(summaryRatings);
+	} else {
+		ratingItems.forEach((item) => item.classList.remove('wos-trakt-rating-hidden'));
+	}
 }
 
+const CINETRAKT_STICKY_POSTER_RAIL_ID = 'cinetrakt-sticky-poster-rail';
+let cinetraktStickyPosterState = null;
+let cinetraktStickyPosterResizeTimer = null;
 
 function injectWatchOnStremioPosterSizeStyles() {
 	if (document.getElementById('watch-on-stremio-poster-size-styles')) return;
@@ -2204,47 +2340,408 @@ function injectWatchOnStremioPosterSizeStyles() {
 	const style = document.createElement('style');
 	style.id = 'watch-on-stremio-poster-size-styles';
 	style.textContent = `
-		/* Agrandissement propre de la grande pochette Trakt.
-		   On garde la grille native Trakt, mais on fixe aussi une largeur confortable
-		   pour la colonne texte afin que les notes/synopsis ne repassent pas sur la pochette. */
+		/* Colonne fixe CineTrakt : commandes et affiche restent visibles pendant que
+		   le résumé et les sections suivantes défilent dans la partie droite. */
 		.trakt-summary-container.watch-on-stremio-poster-size-ready,
 		[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready {
-			--summary-poster-width: var(--watch-on-stremio-summary-poster-width) !important;
-			--summary-content-width: var(--watch-on-stremio-summary-content-width) !important;
-			width: var(--watch-on-stremio-summary-total-width) !important;
-			max-width: var(--watch-on-stremio-summary-total-width) !important;
+			grid-template-columns:
+				minmax(0, 1fr)
+				minmax(220px, 320px) !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			margin-left: 0 !important;
+			align-items: start !important;
 		}
 
-		.watch-on-stremio-summary-poster-sized {
+		html.cinetrakt-poster-layout-enabled,
+		html.cinetrakt-poster-layout-enabled body {
+			max-width: 100% !important;
+			overflow-x: clip !important;
+		}
+
+		main.cinetrakt-sticky-poster-detail-page {
+			box-sizing: border-box !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			min-width: 0 !important;
+			padding-left: var(--watch-on-stremio-sticky-content-left) !important;
+			padding-right: 24px !important;
+			overflow-x: clip !important;
+		}
+
+		main.cinetrakt-sticky-poster-detail-page > * {
+			box-sizing: border-box !important;
+			max-width: 100% !important;
+			min-width: 0 !important;
+		}
+
+		#${CINETRAKT_STICKY_POSTER_RAIL_ID} {
+			box-sizing: border-box !important;
+			position: fixed !important;
+			left: var(--watch-on-stremio-sticky-poster-left) !important;
+			top: var(--watch-on-stremio-sticky-poster-top) !important;
+			width: var(--watch-on-stremio-summary-poster-width) !important;
+			display: flex !important;
+			flex-direction: column !important;
+			align-items: center !important;
+			gap: 8px !important;
+			z-index: 20 !important;
+			pointer-events: none !important;
+		}
+
+		#${CINETRAKT_STICKY_POSTER_RAIL_ID} > * {
+			pointer-events: auto !important;
+		}
+
+		.cinetrakt-sticky-poster-controls {
+			box-sizing: border-box !important;
+			position: static !important;
+			inset: auto !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			margin: 0 !important;
+			display: flex !important;
+			flex-direction: column !important;
+			align-items: center !important;
+			justify-content: center !important;
+			gap: 6px !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized {
 			width: var(--watch-on-stremio-summary-poster-width) !important;
 			max-width: var(--watch-on-stremio-summary-poster-width) !important;
+			height: var(--watch-on-stremio-summary-poster-height) !important;
+			min-height: 0 !important;
+			max-height: none !important;
+			aspect-ratio: auto !important;
+			overflow: visible !important;
 		}
 
-		.watch-on-stremio-summary-poster-sized img {
+		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized .trakt-summary-poster-container,
+		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized .trakt-summary-poster,
+		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized .trakt-summary-poster > a {
 			width: 100% !important;
-			height: auto !important;
+			max-width: 100% !important;
+			height: 100% !important;
+			min-height: 0 !important;
+			max-height: none !important;
+			aspect-ratio: auto !important;
+			overflow: visible !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized img {
+			width: 100% !important;
+			height: 100% !important;
+			min-height: 0 !important;
+			max-height: none !important;
+			aspect-ratio: auto !important;
 			object-fit: contain !important;
 		}
 
 		.watch-on-stremio-poster-size-ready .trakt-summary-content,
 		.watch-on-stremio-poster-size-ready [class*="trakt-summary-content"] {
-			min-width: min(var(--watch-on-stremio-summary-content-width), 100%) !important;
+			grid-column: 1 !important;
+			width: auto !important;
+			min-width: 0 !important;
 		}
 
+		.watch-on-stremio-poster-size-ready .trakt-summary-contextual-content,
+		.watch-on-stremio-poster-size-ready [class*="trakt-summary-contextual-content"] {
+			grid-column: 2 !important;
+			min-width: 0 !important;
+		}
+
+		main.cinetrakt-sticky-poster-detail-page .cinetrakt-sticky-right-section {
+			box-sizing: border-box !important;
+			margin: 0 0 0 -24px !important;
+			width: calc(100% + 24px) !important;
+			max-width: calc(100% + 24px) !important;
+			min-width: 0 !important;
+		}
+
+		.cinetrakt-sticky-right-footer {
+			box-sizing: border-box !important;
+			margin-left: var(--watch-on-stremio-sticky-content-left) !important;
+			width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 24px) !important;
+			max-width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 24px) !important;
+			min-width: 0 !important;
+			padding-left: 48px !important;
+			padding-right: 24px !important;
+		}
+
+		.cinetrakt-sticky-right-footer .trakt-footer-content,
+		.cinetrakt-sticky-right-footer .trakt-footer-grid {
+			box-sizing: border-box !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			min-width: 0 !important;
+		}
+
+		@media (max-width: 1000px) {
+			.trakt-summary-container.watch-on-stremio-poster-size-ready,
+			[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready {
+				grid-template-columns: minmax(0, 1fr) !important;
+			}
+
+			.watch-on-stremio-poster-size-ready .trakt-summary-contextual-content,
+			.watch-on-stremio-poster-size-ready [class*="trakt-summary-contextual-content"] {
+				grid-column: 1 !important;
+			}
+		}
 	`;
 	document.head.appendChild(style);
 }
 
+function findCinetraktStickyPosterControls(summaryContainer) {
+	const mainContent = summaryContainer.querySelector('.trakt-summary-main-content');
+	if (!mainContent) return null;
+
+	const actionsBar = summaryContainer.querySelector('.trakt-summary-actions-bar');
+	if (actionsBar) {
+		const actionsGroup = actionsBar.closest('.trakt-summary-actions');
+		return actionsGroup
+			&& actionsGroup !== summaryContainer
+			&& summaryContainer.contains(actionsGroup)
+			? actionsGroup
+			: actionsBar;
+	}
+
+	// Compatibilité avec une ancienne structure Trakt dépourvue de barre nommée.
+	const rateNow = summaryContainer.querySelector('.trakt-rate-now, [class*="trakt-rate-now"]');
+	if (!rateNow) return null;
+
+	for (let candidate = rateNow.parentElement;
+		candidate && candidate !== mainContent;
+		candidate = candidate.parentElement) {
+		const rect = candidate.getBoundingClientRect();
+		const hasSeparateAction = [...candidate.querySelectorAll('button, a, [role="button"]')]
+			.some((element) => !rateNow.contains(element));
+		if (hasSeparateAction && rect.height > 0 && rect.height <= 220) return candidate;
+	}
+
+	return rateNow;
+}
+
+function moveCinetraktElementWithPlaceholder(element, placeholderText) {
+	if (!element?.parentNode) return null;
+	const placeholder = document.createComment(placeholderText);
+	const parent = element.parentNode;
+	parent.insertBefore(placeholder, element);
+	return { element, parent, placeholder };
+}
+
+function restoreCinetraktMovedElement(entry) {
+	if (!entry?.element) return;
+	if (entry.placeholder?.parentNode) {
+		entry.placeholder.parentNode.insertBefore(entry.element, entry.placeholder);
+		entry.placeholder.remove();
+	} else if (entry.parent?.isConnected) {
+		entry.parent.appendChild(entry.element);
+	}
+}
+
+function attachCinetraktStickyPosterControls(state) {
+	const attachedControls = state.controlsEntry?.element;
+	if (attachedControls?.isConnected) {
+		attachedControls.classList.add('cinetrakt-sticky-poster-controls');
+		if (!state.rail.contains(attachedControls)) {
+			state.rail.insertBefore(attachedControls, state.posterContainer);
+		}
+		return;
+	}
+	if (state.controlsEntry) {
+		state.controlsEntry.placeholder?.remove();
+		state.controlsEntry = null;
+	}
+
+	const controls = findCinetraktStickyPosterControls(state.summaryContainer);
+	if (!controls || state.rail.contains(controls)) return;
+
+	state.controlsEntry = moveCinetraktElementWithPlaceholder(
+		controls,
+		'CineTrakt sticky poster controls position',
+	);
+	controls.classList.add('cinetrakt-sticky-poster-controls');
+	state.rail.insertBefore(controls, state.posterContainer);
+}
+
+function markCinetraktResponsiveRightContent(state) {
+	state.sectionElements ||= new Set();
+	state.mainContent.querySelectorAll('section.section-list-container').forEach((section) => {
+		if (section.closest('.trakt-summary-container')) return;
+		section.classList.add('cinetrakt-sticky-right-section');
+		state.sectionElements.add(section);
+	});
+	state.mainContent.querySelectorAll('section.trakt-soundtrack-section').forEach((section) => {
+		section.classList.add('cinetrakt-sticky-right-section');
+		state.sectionElements.add(section);
+	});
+
+	const specialSectionTitles = new Set(['soundtrack', 'bande originale', 'trivia', 'anecdotes']);
+	state.mainContent.querySelectorAll(
+		'h1, h2, h3, h4, .trakt-list-title, .trakt-list-inset-title, [class*="section-title"]',
+	).forEach((title) => {
+		if (!specialSectionTitles.has(title.textContent?.trim().toLowerCase())) return;
+		const titleRect = title.getBoundingClientRect();
+		let section = title.closest('section');
+		for (let element = title.parentElement;
+			!section && element && element !== state.mainContent;
+			element = element.parentElement) {
+			const rect = element.getBoundingClientRect();
+			const inset = titleRect.left - rect.left;
+			if (rect.width > 0 && inset >= 20 && inset <= 28) section = element;
+		}
+		if (!section || section.closest('.trakt-summary-container')) return;
+		section.classList.add('cinetrakt-sticky-right-section');
+		state.sectionElements.add(section);
+	});
+	const footer = document.querySelector('footer, [role="contentinfo"]');
+	if (footer) {
+		state.footer = footer;
+		footer.classList.add('cinetrakt-sticky-right-footer');
+	}
+}
+
+function scheduleCinetraktStickyPosterLayoutUpdate(delay = 80) {
+	window.clearTimeout(cinetraktStickyPosterResizeTimer);
+	cinetraktStickyPosterResizeTimer = window.setTimeout(() => {
+		cinetraktStickyPosterResizeTimer = null;
+		if (cinetraktStickyPosterState) {
+			updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
+		}
+	}, delay);
+}
+
+function applyCinetraktStickyPosterDimensions(state, width, height) {
+	const {
+		summaryContainer,
+		posterContainer,
+		mainContent,
+		summaryLeft,
+	} = state;
+	const contentLeft = summaryLeft + width + 32;
+
+	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${width}px`);
+	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-height', `${height}px`);
+	posterContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${width}px`);
+	posterContainer.style.setProperty('--watch-on-stremio-summary-poster-height', `${height}px`);
+	mainContent.style.setProperty('--watch-on-stremio-sticky-content-left', `${contentLeft}px`);
+	state.footer?.style.setProperty('--watch-on-stremio-sticky-content-left', `${contentLeft}px`);
+}
+
+function getCinetraktVisibleViewportBottom() {
+	if (window.visualViewport) {
+		return window.visualViewport.offsetTop + window.visualViewport.height;
+	}
+	return Math.min(
+		document.documentElement.clientHeight || Number.POSITIVE_INFINITY,
+		window.innerHeight || Number.POSITIVE_INFINITY,
+	);
+}
+
+function scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, bottomSafety) {
+	window.cancelAnimationFrame(state.boundsCorrectionFrame);
+	state.boundsCorrectionFrame = window.requestAnimationFrame(() => {
+		state.boundsCorrectionFrame = null;
+		if (state !== cinetraktStickyPosterState || !state.posterContainer.isConnected) return;
+
+		const posterRect = state.posterContainer.getBoundingClientRect();
+		let decorationOverflow = 0;
+		state.posterContainer.querySelectorAll('*')
+			.forEach((element) => {
+				const rect = element.getBoundingClientRect();
+				if (rect.width <= 0 || rect.height <= 0) return;
+				decorationOverflow = Math.max(decorationOverflow, rect.bottom - posterRect.bottom);
+			});
+		state.posterDecorationOverflow = Math.max(0, decorationOverflow);
+		const targetPosterBottom = getCinetraktVisibleViewportBottom()
+			- bottomSafety
+			- state.posterDecorationOverflow;
+		const correctedHeight = Math.floor(targetPosterBottom - posterRect.top);
+		if (correctedHeight <= 0 || Math.abs(correctedHeight - posterRect.height) < 0.5) return;
+
+		const correctedWidth = Math.max(1, Math.floor(correctedHeight * imageRatio));
+		applyCinetraktStickyPosterDimensions(state, correctedWidth, correctedHeight);
+	});
+}
+
+function updateCinetraktStickyPosterLayout(state) {
+	const { summaryContainer, posterContainer, posterImage, rail, mainContent } = state;
+	if (!summaryContainer.isConnected || !posterContainer.isConnected || !rail.isConnected) return;
+
+	attachCinetraktStickyPosterControls(state);
+	markCinetraktResponsiveRightContent(state);
+	if (!posterImage.complete || !posterImage.naturalWidth || !posterImage.naturalHeight) {
+		const pendingSource = posterImage.currentSrc || posterImage.src || window.location.pathname;
+		if (posterImage.dataset.watchOnStremioPosterLoadSource !== pendingSource) {
+			posterImage.dataset.watchOnStremioPosterLoadSource = pendingSource;
+			posterImage.addEventListener('load', () => scheduleCinetraktStickyPosterLayoutUpdate(0), { once: true });
+		}
+		return;
+	}
+
+	const viewportHeights = [
+		document.documentElement.clientHeight,
+		window.innerHeight,
+		window.visualViewport?.height,
+	].filter((value) => Number.isFinite(value) && value > 0);
+	const viewportHeight = Math.floor(viewportHeights.length
+		? Math.min(...viewportHeights)
+		: window.innerHeight);
+	const imageRatio = posterImage.naturalWidth / posterImage.naturalHeight;
+	const summaryRect = summaryContainer.getBoundingClientRect();
+	const sidebarRect = document.querySelector('.trakt-side-navbar')?.getBoundingClientRect();
+	const configuredSideGap = Number.parseFloat(
+		getComputedStyle(document.documentElement).getPropertyValue('--layout-distance-side'),
+	);
+	const sidebarGap = Number.isFinite(configuredSideGap) ? configuredSideGap : 24;
+	const summaryLeft = sidebarRect?.width > 0
+		? Math.max(0, Math.round(sidebarRect.right + sidebarGap))
+		: state.summaryLeft;
+	if (window.scrollY < 2) state.posterTop = Math.max(0, summaryRect.top + 38);
+	state.summaryLeft = summaryLeft;
+	const posterTop = state.posterTop;
+	const controlsHeight = state.controlsEntry?.element?.getBoundingClientRect().height || 0;
+	const controlsGap = controlsHeight > 0 ? 8 : 0;
+	const railTop = Math.max(8, posterTop - controlsHeight - controlsGap);
+	const posterBottomSafety = 24;
+	const availableHeight = Math.max(
+		1,
+		viewportHeight - posterTop - posterBottomSafety - state.posterDecorationOverflow,
+	);
+	const finalHeight = Math.floor(availableHeight);
+	const finalWidth = Math.max(1, Math.floor(finalHeight * imageRatio));
+
+	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-left', `${summaryLeft}px`);
+	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-top', `${railTop}px`);
+	applyCinetraktStickyPosterDimensions(state, finalWidth, finalHeight);
+	scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, posterBottomSafety);
+}
+
 function setupWatchOnStremioPosterSize() {
 	if (window.location.hostname !== 'app.trakt.tv') return;
-	if (!/^\/(shows|movies)\//.test(window.location.pathname)) return;
+	if (!/^\/(shows|movies)\/[^/]+\/?$/.test(window.location.pathname)) return;
+	const routeKey = window.location.pathname;
+
+	if (cinetraktStickyPosterState
+		&& (cinetraktStickyPosterState.routeKey !== routeKey
+			|| !cinetraktStickyPosterState.summaryContainer?.isConnected
+			|| !cinetraktStickyPosterState.rail?.isConnected)) {
+		cleanupWatchOnStremioPosterSize();
+	}
+	if (cinetraktStickyPosterState) {
+		updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
+		return;
+	}
 
 	const summaryContainer = document.querySelector('.trakt-summary-container')
 		|| document.querySelector('[class*="trakt-summary-container"]');
 	const posterContainer = summaryContainer?.querySelector('.trakt-summary-poster-container')
 		|| summaryContainer?.querySelector('[class*="trakt-summary-poster-container"]');
+	const posterImage = posterContainer?.querySelector('img');
+	const mainContent = summaryContainer?.closest('main.trakt-content, main');
 
-	if (!summaryContainer || !posterContainer) return;
+	if (!summaryContainer || !posterContainer || !posterImage || !mainContent) return;
 
 	injectWatchOnStremioPosterSizeStyles();
 
@@ -2255,45 +2752,997 @@ function setupWatchOnStremioPosterSize() {
 		posterContainer.style.removeProperty(property);
 	}
 
-	if (!posterContainer.dataset.watchOnStremioNativePosterWidth) {
-		const rect = posterContainer.getBoundingClientRect();
-		posterContainer.dataset.watchOnStremioNativePosterWidth = String(Math.round(rect.width || 320));
-	}
-
-	const nativeWidth = Number(posterContainer.dataset.watchOnStremioNativePosterWidth) || 320;
-	const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
-	const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
-
-	// Pochette validée, micro-augmentée de 1px réel par rapport à la 0.4.50.
-	// On agrandit surtout le conteneur global de la fiche afin de laisser respirer
-	// les trois colonnes natives Trakt, sans forcer la div centrale elle-même.
-	const wantedWidth = Math.round(nativeWidth * 1.665);
-	const maxByHeight = Math.floor((viewportHeight - 95) * 0.772);
-	const maxByWidth = Math.floor(viewportWidth * 0.386);
-	const finalWidth = Math.max(nativeWidth, Math.min(wantedWidth, maxByHeight, maxByWidth, 605) + 2);
-	const contentWidth = Math.max(620, Math.min(760, Math.floor(viewportWidth * 0.38)));
-	const totalWidth = Math.max(1280, Math.min(1560, viewportWidth - 260));
-
+	const originalPosterRect = posterContainer.getBoundingClientRect();
+	const posterEntry = moveCinetraktElementWithPlaceholder(
+		posterContainer,
+		'CineTrakt sticky poster position',
+	);
+	const rail = document.createElement('div');
+	rail.id = CINETRAKT_STICKY_POSTER_RAIL_ID;
+	summaryContainer.prepend(rail);
+	rail.appendChild(posterContainer);
 	summaryContainer.classList.add('watch-on-stremio-poster-size-ready');
 	posterContainer.classList.add('watch-on-stremio-summary-poster-sized');
-	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${finalWidth}px`);
-	summaryContainer.style.setProperty('--watch-on-stremio-summary-content-width', `${contentWidth}px`);
-	summaryContainer.style.setProperty('--watch-on-stremio-summary-total-width', `${totalWidth}px`);
-	posterContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${finalWidth}px`);
+	mainContent.classList.add('cinetrakt-sticky-poster-detail-page');
+
+	cinetraktStickyPosterState = {
+		routeKey,
+		summaryContainer,
+		posterContainer,
+		posterImage,
+		posterEntry,
+		controlsEntry: null,
+		rail,
+		mainContent,
+		sectionElements: new Set(),
+		footer: null,
+		boundsCorrectionFrame: null,
+		posterDecorationOverflow: 0,
+		summaryLeft: Math.max(0, originalPosterRect.left),
+		posterTop: Math.max(0, originalPosterRect.top),
+	};
+	updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
 }
 
-function runStremioButtons() {
+function cleanupWatchOnStremioPosterSize() {
+	window.clearTimeout(cinetraktStickyPosterResizeTimer);
+	cinetraktStickyPosterResizeTimer = null;
+	document.documentElement.classList.remove('cinetrakt-poster-layout-enabled');
+	const state = cinetraktStickyPosterState;
+	window.cancelAnimationFrame(state?.boundsCorrectionFrame);
+	const summaryContainer = state?.summaryContainer
+		|| document.querySelector('.watch-on-stremio-poster-size-ready');
+	const posterContainer = state?.posterContainer
+		|| document.querySelector('.watch-on-stremio-summary-poster-sized');
+
+	state?.controlsEntry?.element?.classList.remove('cinetrakt-sticky-poster-controls');
+	restoreCinetraktMovedElement(state?.controlsEntry);
+	restoreCinetraktMovedElement(state?.posterEntry);
+	state?.rail?.remove();
+	state?.mainContent?.classList.remove('cinetrakt-sticky-poster-detail-page');
+	state?.mainContent?.style.removeProperty('--watch-on-stremio-sticky-content-left');
+	state?.sectionElements?.forEach((section) => {
+		section.classList.remove('cinetrakt-sticky-right-section');
+	});
+	state?.footer?.classList.remove('cinetrakt-sticky-right-footer');
+	state?.footer?.style.removeProperty('--watch-on-stremio-sticky-content-left');
+	summaryContainer?.classList.remove('watch-on-stremio-poster-size-ready');
+	posterContainer?.classList.remove('watch-on-stremio-summary-poster-sized');
+	for (const element of [summaryContainer, posterContainer]) {
+		if (!element) continue;
+		for (const property of [
+			'--watch-on-stremio-summary-poster-width',
+			'--watch-on-stremio-summary-poster-height',
+			'--watch-on-stremio-sticky-poster-left',
+			'--watch-on-stremio-sticky-poster-top',
+		]) {
+			element.style.removeProperty(property);
+		}
+	}
+	cinetraktStickyPosterState = null;
+}
+
+/* Soundtrack autoplay and the compact control next to the Trakt logo. */
+const CINETRAKT_SOUNDTRACK_AUTOPLAY_MAX_ATTEMPTS = 4;
+const CINETRAKT_SOUNDTRACK_AUTOPLAY_RETRY_DELAY = 1300;
+const CINETRAKT_SOUNDTRACK_DISCOVERY_TIMEOUT = 30000;
+const cinetraktReadySpotifyEmbeds = new WeakSet();
+const cinetraktSoundtrackState = {
+	routeKey: '',
+	status: 'idle',
+	discoveryDeadline: 0,
+	autoplayAttempted: false,
+	autoplaySettled: false,
+	autoplayAttemptCount: 0,
+	autoplayClickedControl: null,
+	selectedTrackKey: '',
+	selectedControl: null,
+	section: null,
+	card: null,
+	coverButton: null,
+	coverImage: null,
+	titleElement: null,
+	artistElement: null,
+	cardReady: false,
+	playbackState: 'paused',
+	displayedTrackKey: '',
+	displayedCoverUrl: '',
+	metadataRequestId: 0,
+	soundtrackObserver: null,
+	syncTimer: null,
+	autoplayTimer: null,
+	settleTimer: null,
+};
+
+function getCinetraktSoundtrackRouteKey() {
+	const match = window.location.pathname.match(/^\/(movies|shows)\/([^/]+)\/?$/);
+	return match ? `/${match[1]}/${match[2]}` : '';
+}
+
+function findCinetraktSoundtrackSummarySection() {
+	return Array.from(document.querySelectorAll('section.trakt-soundtrack-section'))
+		.find((section) => !section.closest('.trakt-drawer, .trakt-soundtrack-upsell')) || null;
+}
+
+function getCinetraktSoundtrackTrackKey(row) {
+	const position = row.querySelector('.row-position')?.textContent?.trim() || '';
+	const title = row.querySelector('.row-title')?.textContent?.trim() || '';
+	const performer = row.querySelector('.row-performer')?.textContent?.trim() || '';
+	return title ? `${position}|${title}|${performer}` : '';
+}
+
+function findCinetraktSoundtrackNativeControl(row) {
+	if (!row || row.closest('.trakt-soundtrack-upsell') || row.querySelector('.row-unmatched')) return null;
+
+	const control = row.querySelector('button.row-action[type="button"]')
+		|| Array.from(row.querySelectorAll('button[type="button"][aria-label]')).find((button) => {
+			return /play|pause|ecouter|mettre en pause/i.test(button.getAttribute('aria-label') || '');
+		});
+
+	if (!control || control.disabled || control.getAttribute('aria-disabled') === 'true') return null;
+	return control;
+}
+
+function isCinetraktSoundtrackControlPlaying(control) {
+	if (!control?.isConnected) return false;
+	const label = (control.getAttribute('aria-label') || '').trim();
+	if (/pause|mettre en pause|pausar|pausieren|pauze|suspend/i.test(label)) return true;
+	return !!control.querySelector('svg path[d^="M560-200"]');
+}
+
+function createCinetraktSoundtrackTrack(row, fallbackIndex) {
+	const control = findCinetraktSoundtrackNativeControl(row);
+	const key = getCinetraktSoundtrackTrackKey(row);
+	if (!control || !key) return null;
+
+	return {
+		index: Number.parseInt(row.querySelector('.row-position')?.textContent || '', 10) || fallbackIndex,
+		key,
+		title: row.querySelector('.row-title')?.textContent?.trim() || '',
+		artist: row.querySelector('.row-performer')?.textContent?.trim() || '',
+		row,
+		control,
+	};
+}
+
+function collectCinetraktPlayableSummaryTracks(section = cinetraktSoundtrackState.section) {
+	if (!section?.isConnected) return [];
+
+	const tracks = [];
+	const seenKeys = new Set();
+	for (const row of section.querySelectorAll('.trakt-soundtrack-row')) {
+		if (row.hidden || row.getAttribute('aria-hidden') === 'true' || row.getClientRects().length === 0) continue;
+		const track = createCinetraktSoundtrackTrack(row, tracks.length + 1);
+		if (!track || seenKeys.has(track.key)) continue;
+		seenKeys.add(track.key);
+		tracks.push(track);
+	}
+	return tracks;
+}
+
+function collectCinetraktControllableSoundtrackTracks() {
+	const tracks = [];
+	const seenControls = new Set();
+	for (const row of document.querySelectorAll('.trakt-soundtrack-row')) {
+		const track = createCinetraktSoundtrackTrack(row, tracks.length + 1);
+		if (!track || seenControls.has(track.control)) continue;
+		seenControls.add(track.control);
+		tracks.push(track);
+	}
+	return tracks;
+}
+
+function findCinetraktActiveSoundtrackTrack(tracks = collectCinetraktControllableSoundtrackTracks()) {
+	return tracks.find((track) => isCinetraktSoundtrackControlPlaying(track.control))
+		|| tracks.find((track) => track.row.classList.contains('is-playing'))
+		|| null;
+}
+
+function injectCinetraktSoundtrackCardStyles() {
+	if (document.getElementById('cinetrakt-soundtrack-card-style')) return;
+
+	const style = document.createElement('style');
+	style.id = 'cinetrakt-soundtrack-card-style';
+	style.textContent = `
+		.trakt-side-navbar.cinetrakt-soundtrack-card-mounted {
+			justify-content: flex-start !important;
+		}
+
+		.trakt-side-navbar.cinetrakt-soundtrack-card-mounted > .trakt-side-navbar-bottom {
+			margin-top: auto;
+		}
+
+		.cinetrakt-soundtrack-card {
+			box-sizing: border-box;
+			color: rgba(255, 255, 255, 0.92);
+			flex: 0 0 auto;
+			margin: 0 8px;
+			min-width: 0;
+			width: calc(100% - 16px);
+		}
+
+		.cinetrakt-soundtrack-card[hidden] {
+			display: none !important;
+		}
+
+		.cinetrakt-soundtrack-cover-button {
+			aspect-ratio: 1;
+			background: rgba(255, 255, 255, 0.06);
+			border: 0;
+			border-radius: 6px;
+			box-shadow: none;
+			cursor: pointer;
+			display: block;
+			overflow: hidden;
+			padding: 0;
+			width: 100%;
+		}
+
+		.cinetrakt-soundtrack-cover-button:focus-visible {
+			outline: 2px solid var(--purple-500, #8b5cf6);
+			outline-offset: 2px;
+		}
+
+		.cinetrakt-soundtrack-cover {
+			display: block;
+			height: 100%;
+			object-fit: cover;
+			opacity: 1;
+			transition: opacity 120ms ease;
+			width: 100%;
+		}
+
+		.cinetrakt-soundtrack-cover-button:hover .cinetrakt-soundtrack-cover {
+			opacity: 0.86;
+		}
+
+		.cinetrakt-soundtrack-title,
+		.cinetrakt-soundtrack-artist {
+			display: -webkit-box;
+			overflow: hidden;
+			padding: 0 2px;
+			text-overflow: ellipsis;
+			-webkit-box-orient: vertical;
+		}
+
+		.cinetrakt-soundtrack-title {
+			font-size: 14px;
+			font-weight: 700;
+			line-height: 1.3;
+			margin: 9px 0 0;
+			-webkit-line-clamp: 2;
+		}
+
+		.cinetrakt-soundtrack-artist {
+			color: rgba(255, 255, 255, 0.62);
+			font-size: 12px;
+			font-weight: 400;
+			line-height: 1.35;
+			margin: 3px 0 0;
+			-webkit-line-clamp: 1;
+		}
+	`;
+	document.head.appendChild(style);
+}
+
+function createCinetraktSoundtrackCard() {
+	const card = document.createElement('div');
+	card.className = 'cinetrakt-soundtrack-card';
+	card.hidden = true;
+
+	const coverButton = document.createElement('button');
+	coverButton.type = 'button';
+	coverButton.className = 'cinetrakt-soundtrack-cover-button';
+	coverButton.setAttribute('aria-label', 'Play soundtrack');
+	coverButton.setAttribute('aria-pressed', 'false');
+	coverButton.title = 'Play soundtrack';
+
+	const coverImage = document.createElement('img');
+	coverImage.className = 'cinetrakt-soundtrack-cover';
+	coverImage.alt = '';
+	coverImage.draggable = false;
+	coverButton.appendChild(coverImage);
+
+	const titleElement = document.createElement('p');
+	titleElement.className = 'cinetrakt-soundtrack-title';
+	const artistElement = document.createElement('p');
+	artistElement.className = 'cinetrakt-soundtrack-artist';
+
+	card.append(coverButton, titleElement, artistElement);
+	coverButton.addEventListener('click', toggleCinetraktSoundtrackPlayback);
+	Object.assign(cinetraktSoundtrackState, { card, coverButton, coverImage, titleElement, artistElement });
+	return card;
+}
+
+function ensureCinetraktSoundtrackCardPlacement() {
+	const sidebar = document.querySelector('.trakt-side-navbar');
+	const top = sidebar?.querySelector(':scope > .trakt-side-navbar-top');
+	const content = sidebar?.querySelector(':scope > .trakt-side-navbar-content');
+	if (!sidebar || !top || !content) return null;
+
+	if (!cinetraktSoundtrackState.card) {
+		injectCinetraktSoundtrackCardStyles();
+		createCinetraktSoundtrackCard();
+	}
+
+	for (const duplicate of document.querySelectorAll('.cinetrakt-soundtrack-card')) {
+		if (duplicate !== cinetraktSoundtrackState.card) duplicate.remove();
+	}
+	if (cinetraktSoundtrackState.card.parentElement !== sidebar
+		|| cinetraktSoundtrackState.card.previousElementSibling !== top) {
+		sidebar.insertBefore(cinetraktSoundtrackState.card, content);
+	}
+
+	const visible = cinetraktSoundtrackState.cardReady && top.classList.contains('is-expanded');
+	sidebar.classList.toggle('cinetrakt-soundtrack-card-mounted', visible);
+	cinetraktSoundtrackState.card.hidden = !visible;
+	return cinetraktSoundtrackState.card;
+}
+
+function updateCinetraktSoundtrackPlaybackState(nextState) {
+	if (nextState === cinetraktSoundtrackState.playbackState) return;
+	cinetraktSoundtrackState.playbackState = nextState;
+	const playing = nextState === 'playing';
+	const label = playing ? 'Pause soundtrack' : 'Play soundtrack';
+	cinetraktSoundtrackState.coverButton?.setAttribute('aria-label', label);
+	cinetraktSoundtrackState.coverButton?.setAttribute('aria-pressed', playing ? 'true' : 'false');
+	if (cinetraktSoundtrackState.coverButton) cinetraktSoundtrackState.coverButton.title = label;
+}
+
+function normalizeCinetraktSpotifyEntityUrl(value) {
+	if (!value) return '';
+	try {
+		const url = new URL(value, window.location.href);
+		const pathMatch = url.pathname.match(/^\/(?:embed\/)?(track|episode|album)\/([A-Za-z0-9]+)/);
+		if (pathMatch) return `https://open.spotify.com/${pathMatch[1]}/${pathMatch[2]}`;
+
+		const uriMatch = (url.searchParams.get('uri') || '').match(/^spotify:(track|episode|album):([A-Za-z0-9]+)$/);
+		return uriMatch ? `https://open.spotify.com/${uriMatch[1]}/${uriMatch[2]}` : '';
+	} catch (_error) {
+		return '';
+	}
+}
+
+function preloadCinetraktSoundtrackCover(url) {
+	return new Promise((resolve, reject) => {
+		const image = new Image();
+		image.onload = () => resolve(url);
+		image.onerror = reject;
+		image.src = url;
+	});
+}
+
+function isCinetraktSpotifyCoverUrl(value) {
+	try {
+		const url = new URL(value);
+		return url.protocol === 'https:'
+			&& (url.hostname === 'i.scdn.co' || url.hostname.endsWith('.spotifycdn.com'));
+	} catch (_error) {
+		return false;
+	}
+}
+
+async function applyCinetraktSpotifyEmbedMetadata(track, metadata) {
+	const coverUrl = typeof metadata.coverUrl === 'string' ? metadata.coverUrl : '';
+	const title = typeof metadata.title === 'string' ? metadata.title.trim().slice(0, 300) : '';
+	const artist = typeof metadata.artist === 'string' ? metadata.artist.trim().slice(0, 300) : '';
+	if (!track || !isCinetraktSpotifyCoverUrl(coverUrl) || !title || !artist) return;
+	if (track.key === cinetraktSoundtrackState.displayedTrackKey
+		&& coverUrl === cinetraktSoundtrackState.displayedCoverUrl) return;
+
+	const requestId = ++cinetraktSoundtrackState.metadataRequestId;
+	try {
+		await preloadCinetraktSoundtrackCover(coverUrl);
+		if (requestId !== cinetraktSoundtrackState.metadataRequestId
+			|| track.key !== cinetraktSoundtrackState.selectedTrackKey
+			|| cinetraktSoundtrackState.routeKey !== getCinetraktSoundtrackRouteKey()) return;
+
+		cinetraktSoundtrackState.coverImage.src = coverUrl;
+		cinetraktSoundtrackState.titleElement.textContent = title;
+		cinetraktSoundtrackState.artistElement.textContent = artist;
+		cinetraktSoundtrackState.displayedTrackKey = track.key;
+		cinetraktSoundtrackState.displayedCoverUrl = coverUrl;
+		cinetraktSoundtrackState.cardReady = true;
+		ensureCinetraktSoundtrackCardPlacement();
+		if (isCinetraktFeatureEnabled('traktSoundtrackAutoplay')
+			&& !cinetraktSoundtrackState.autoplaySettled) {
+			scheduleCinetraktSoundtrackAutoplayAttempt(80);
+		}
+	} catch (_error) {
+		// Keep the card hidden rather than showing metadata that does not match the iframe.
+	}
+}
+
+function handleCinetraktSpotifyEmbedMessage(event) {
+	if (event.origin !== 'https://open.spotify.com'
+		|| ![
+			'cinetrakt:spotify-embed-ready',
+			'cinetrakt:spotify-embed-metadata',
+			'cinetrakt:spotify-embed-playback-state',
+		].includes(event.data?.type)) return;
+
+	const iframe = Array.from(document.querySelectorAll('iframe[src*="open.spotify.com/embed/"]'))
+		.find((candidate) => candidate.contentWindow === event.source);
+	if (!iframe) return;
+	cinetraktReadySpotifyEmbeds.add(iframe);
+	if (event.data.type === 'cinetrakt:spotify-embed-ready') {
+		scheduleCinetraktSoundtrackSync(0);
+		if (isCinetraktFeatureEnabled('traktSoundtrackAutoplay')) {
+			scheduleCinetraktSoundtrackAutoplayAttempt(0);
+		}
+		return;
+	}
+
+	const track = resolveCinetraktSoundtrackControl();
+	const soundtrackScope = track?.row.closest('section.trakt-soundtrack-section');
+	if (!track || !soundtrackScope?.contains(iframe)) return;
+
+	if (event.data.playbackState === 'playing') {
+		completeCinetraktSoundtrackAutoplay('playing');
+	} else if (event.data.playbackState === 'paused') {
+		updateCinetraktSoundtrackPlaybackState('paused');
+	}
+	if (event.data.type === 'cinetrakt:spotify-embed-playback-state') return;
+
+	const iframeEntityUrl = normalizeCinetraktSpotifyEntityUrl(iframe.src || iframe.getAttribute('src') || '');
+	const messageEntityUrl = normalizeCinetraktSpotifyEntityUrl(event.data.embedUrl);
+	if (iframeEntityUrl && messageEntityUrl && iframeEntityUrl !== messageEntityUrl) return;
+	applyCinetraktSpotifyEmbedMetadata(track, event.data);
+}
+
+function clearCinetraktSoundtrackTimer(name) {
+	if (cinetraktSoundtrackState[name] == null) return;
+	window.clearTimeout(cinetraktSoundtrackState[name]);
+	cinetraktSoundtrackState[name] = null;
+}
+
+function scheduleCinetraktSoundtrackSync(delay = 60) {
+	clearCinetraktSoundtrackTimer('syncTimer');
+	cinetraktSoundtrackState.syncTimer = window.setTimeout(() => {
+		cinetraktSoundtrackState.syncTimer = null;
+		syncCinetraktSoundtrackState();
+	}, delay);
+}
+
+function scheduleCinetraktSoundtrackAutoplayAttempt(delay = CINETRAKT_SOUNDTRACK_AUTOPLAY_RETRY_DELAY) {
+	if (cinetraktSoundtrackState.autoplaySettled || cinetraktSoundtrackState.autoplayTimer != null) return;
+	cinetraktSoundtrackState.autoplayTimer = window.setTimeout(() => {
+		cinetraktSoundtrackState.autoplayTimer = null;
+		if (cinetraktSoundtrackState.routeKey === getCinetraktSoundtrackRouteKey()) {
+			attemptCinetraktSoundtrackAutoplay();
+		}
+	}, delay);
+}
+
+function requestCinetraktSpotifyEmbedPlayback(track) {
+	const section = track?.row.closest('section.trakt-soundtrack-section');
+	const iframe = section?.querySelector('iframe[src*="open.spotify.com/embed/"]');
+	if (!iframe?.contentWindow) return false;
+
+	const allowedFeatures = new Set((iframe.getAttribute('allow') || '').split(';').map((value) => value.trim()).filter(Boolean));
+	allowedFeatures.add('autoplay');
+	iframe.setAttribute('allow', [...allowedFeatures].join('; '));
+	if (!cinetraktReadySpotifyEmbeds.has(iframe)) return true;
+
+	iframe.contentWindow.postMessage({ type: 'cinetrakt:spotify-embed-play' }, 'https://open.spotify.com');
+	return true;
+}
+
+function observeCinetraktSoundtrackSection(section) {
+	if (cinetraktSoundtrackState.section === section && cinetraktSoundtrackState.soundtrackObserver) return;
+	cinetraktSoundtrackState.soundtrackObserver?.disconnect();
+	cinetraktSoundtrackState.section = section;
+	cinetraktSoundtrackState.soundtrackObserver = new MutationObserver(() => scheduleCinetraktSoundtrackSync());
+	cinetraktSoundtrackState.soundtrackObserver.observe(section, {
+		attributes: true,
+		attributeFilter: ['aria-label', 'class', 'disabled', 'src', 'title'],
+		childList: true,
+		subtree: true,
+	});
+}
+
+function resolveCinetraktSoundtrackControl() {
+	const tracks = collectCinetraktControllableSoundtrackTracks();
+	const activeTrack = findCinetraktActiveSoundtrackTrack(tracks);
+	if (activeTrack) {
+		cinetraktSoundtrackState.selectedTrackKey = activeTrack.key;
+		cinetraktSoundtrackState.selectedControl = activeTrack.control;
+		return activeTrack;
+	}
+
+	const selectedTrack = tracks.find((track) => track.key === cinetraktSoundtrackState.selectedTrackKey) || null;
+	if (selectedTrack) cinetraktSoundtrackState.selectedControl = selectedTrack.control;
+	return selectedTrack;
+}
+
+function syncCinetraktSoundtrackState() {
+	if (!cinetraktSoundtrackState.routeKey
+		|| cinetraktSoundtrackState.routeKey !== getCinetraktSoundtrackRouteKey()) return;
+
+	const section = findCinetraktSoundtrackSummarySection();
+	if (!section) return;
+	observeCinetraktSoundtrackSection(section);
+	ensureCinetraktSoundtrackCardPlacement();
+
+	const track = resolveCinetraktSoundtrackControl();
+	if (!track) return;
+	if (track.key !== cinetraktSoundtrackState.displayedTrackKey) {
+		cinetraktSoundtrackState.cardReady = false;
+		ensureCinetraktSoundtrackCardPlacement();
+	}
+	if (!cinetraktSoundtrackState.autoplaySettled) {
+		if (isCinetraktSoundtrackControlPlaying(track.control)) {
+			completeCinetraktSoundtrackAutoplay('playing');
+		}
+		return;
+	}
+	const nextState = isCinetraktSoundtrackControlPlaying(track.control) ? 'playing' : 'paused';
+	updateCinetraktSoundtrackPlaybackState(nextState);
+	ensureCinetraktSoundtrackCardPlacement();
+}
+
+function completeCinetraktSoundtrackAutoplay(playbackState = '') {
+	clearCinetraktSoundtrackTimer('autoplayTimer');
+	clearCinetraktSoundtrackTimer('settleTimer');
+	cinetraktSoundtrackState.autoplayAttempted = true;
+	cinetraktSoundtrackState.autoplaySettled = true;
+	const track = resolveCinetraktSoundtrackControl();
+	const nextState = playbackState || (track && isCinetraktSoundtrackControlPlaying(track.control) ? 'playing' : 'paused');
+	updateCinetraktSoundtrackPlaybackState(nextState);
+	ensureCinetraktSoundtrackCardPlacement();
+}
+
+function attemptCinetraktSoundtrackAutoplay() {
+	if (cinetraktSoundtrackState.autoplaySettled) return;
+	cinetraktSoundtrackState.autoplayAttempted = true;
+
+	const tracks = collectCinetraktPlayableSummaryTracks();
+	const selected = tracks.find((track) => track.key === cinetraktSoundtrackState.selectedTrackKey);
+	if (!selected?.control?.isConnected) {
+		if (cinetraktSoundtrackState.autoplayAttemptCount >= CINETRAKT_SOUNDTRACK_AUTOPLAY_MAX_ATTEMPTS) {
+			completeCinetraktSoundtrackAutoplay('paused');
+		} else {
+			cinetraktSoundtrackState.autoplayAttemptCount += 1;
+			scheduleCinetraktSoundtrackAutoplayAttempt();
+		}
+		return;
+	}
+
+	if (isCinetraktSoundtrackControlPlaying(selected.control)) {
+		completeCinetraktSoundtrackAutoplay('playing');
+		return;
+	}
+
+	cinetraktSoundtrackState.autoplayAttemptCount += 1;
+	const isFirstAttempt = cinetraktSoundtrackState.autoplayAttemptCount === 1;
+	const controlWasReplaced = cinetraktSoundtrackState.autoplayClickedControl
+		&& cinetraktSoundtrackState.autoplayClickedControl !== selected.control;
+	cinetraktSoundtrackState.selectedControl = selected.control;
+
+	if (isFirstAttempt || controlWasReplaced) {
+		cinetraktSoundtrackState.autoplayClickedControl = selected.control;
+		selected.control.click();
+	} else if (!requestCinetraktSpotifyEmbedPlayback(selected)) {
+		selected.control.click();
+	}
+
+	if (cinetraktSoundtrackState.autoplayAttemptCount >= CINETRAKT_SOUNDTRACK_AUTOPLAY_MAX_ATTEMPTS) {
+		clearCinetraktSoundtrackTimer('settleTimer');
+		cinetraktSoundtrackState.settleTimer = window.setTimeout(() => {
+			cinetraktSoundtrackState.settleTimer = null;
+			if (cinetraktSoundtrackState.routeKey === getCinetraktSoundtrackRouteKey()) {
+				completeCinetraktSoundtrackAutoplay();
+			}
+		}, CINETRAKT_SOUNDTRACK_AUTOPLAY_RETRY_DELAY);
+		return;
+	}
+
+	scheduleCinetraktSoundtrackAutoplayAttempt();
+}
+
+function toggleCinetraktSoundtrackPlayback() {
+	if (!cinetraktSoundtrackState.autoplaySettled) return;
+	const track = resolveCinetraktSoundtrackControl();
+	if (!track?.control?.isConnected) return;
+	track.control.click();
+	scheduleCinetraktSoundtrackSync(80);
+}
+
+function cleanupCinetraktSoundtrackFeature({ pause = true, resetRoute = true } = {}) {
+	clearCinetraktSoundtrackTimer('syncTimer');
+	clearCinetraktSoundtrackTimer('autoplayTimer');
+	clearCinetraktSoundtrackTimer('settleTimer');
+
+	if (pause) {
+		const playingTrack = collectCinetraktControllableSoundtrackTracks()
+			.find((track) => isCinetraktSoundtrackControlPlaying(track.control));
+		playingTrack?.control.click();
+	}
+
+	cinetraktSoundtrackState.soundtrackObserver?.disconnect();
+	if (cinetraktSoundtrackState.coverButton) {
+		cinetraktSoundtrackState.coverButton.removeEventListener('click', toggleCinetraktSoundtrackPlayback);
+	}
+	document.querySelector('.trakt-side-navbar')?.classList.remove('cinetrakt-soundtrack-card-mounted');
+	cinetraktSoundtrackState.card?.remove();
+	cinetraktSoundtrackState.metadataRequestId += 1;
+
+	Object.assign(cinetraktSoundtrackState, {
+		status: 'idle',
+		discoveryDeadline: 0,
+		autoplayAttempted: false,
+		autoplaySettled: false,
+		autoplayAttemptCount: 0,
+		autoplayClickedControl: null,
+		selectedTrackKey: '',
+		selectedControl: null,
+		section: null,
+		card: null,
+		coverButton: null,
+		coverImage: null,
+		titleElement: null,
+		artistElement: null,
+		cardReady: false,
+		playbackState: 'paused',
+		displayedTrackKey: '',
+		displayedCoverUrl: '',
+		soundtrackObserver: null,
+	});
+	if (resetRoute) cinetraktSoundtrackState.routeKey = '';
+}
+
+function initializeCinetraktSoundtrackFeatureForRoute() {
+	const routeKey = getCinetraktSoundtrackRouteKey();
+	if (routeKey !== cinetraktSoundtrackState.routeKey) {
+		cleanupCinetraktSoundtrackFeature();
+		if (!routeKey) return;
+		cinetraktSoundtrackState.routeKey = routeKey;
+		cinetraktSoundtrackState.status = 'discovering';
+		cinetraktSoundtrackState.discoveryDeadline = Date.now() + CINETRAKT_SOUNDTRACK_DISCOVERY_TIMEOUT;
+	}
+
+	if (!routeKey || cinetraktSoundtrackState.status === 'unavailable') return;
+	const section = findCinetraktSoundtrackSummarySection();
+	if (!section) {
+		if (cinetraktSoundtrackState.status === 'discovering'
+			&& Date.now() >= cinetraktSoundtrackState.discoveryDeadline) {
+			cinetraktSoundtrackState.status = 'unavailable';
+		}
+		return;
+	}
+	observeCinetraktSoundtrackSection(section);
+
+	const tracks = collectCinetraktPlayableSummaryTracks(section);
+	if (tracks.length === 0) {
+		if (cinetraktSoundtrackState.status === 'discovering'
+			&& Date.now() >= cinetraktSoundtrackState.discoveryDeadline) {
+			cinetraktSoundtrackState.status = 'unavailable';
+			cinetraktSoundtrackState.soundtrackObserver?.disconnect();
+			cinetraktSoundtrackState.soundtrackObserver = null;
+		}
+		return;
+	}
+
+	if (!cinetraktSoundtrackState.selectedTrackKey) {
+		const selected = tracks[Math.floor(Math.random() * tracks.length)];
+		cinetraktSoundtrackState.selectedTrackKey = selected.key;
+		cinetraktSoundtrackState.selectedControl = selected.control;
+		cinetraktSoundtrackState.status = 'ready';
+		ensureCinetraktSoundtrackCardPlacement();
+	}
+
+	if (!isCinetraktFeatureEnabled('traktSoundtrackAutoplay')) {
+		cinetraktSoundtrackState.autoplayAttempted = true;
+		cinetraktSoundtrackState.autoplaySettled = true;
+		updateCinetraktSoundtrackPlaybackState('paused');
+		ensureCinetraktSoundtrackCardPlacement();
+	} else if (!cinetraktSoundtrackState.autoplayAttempted) {
+		scheduleCinetraktSoundtrackAutoplayAttempt(450);
+	}
+
+	syncCinetraktSoundtrackState();
+}
+
+const CINETRAKT_COLLECTION_HOST_ID = 'cinetrakt-official-collection-host';
+const CINETRAKT_COLLECTION_STYLE_ID = 'cinetrakt-official-collection-style';
+let cinetraktCollectionPlacement = null;
+let cinetraktCollectionRenderProbe = null;
+let cinetraktCollectionProbeAttemptedRoute = '';
+
+function injectCinetraktCollectionCardStyles() {
+	if (document.getElementById(CINETRAKT_COLLECTION_STYLE_ID)) return;
+
+	const style = document.createElement('style');
+	style.id = CINETRAKT_COLLECTION_STYLE_ID;
+	style.textContent = `
+		#${CINETRAKT_COLLECTION_HOST_ID} {
+			box-sizing: border-box;
+			margin-top: 20px;
+			width: 100%;
+			min-width: 0;
+			--width-card: 100%;
+			--height-card: auto;
+		}
+
+		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card,
+		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card > .trakt-card-content,
+		#${CINETRAKT_COLLECTION_HOST_ID} .trakt-list-summary-card {
+			box-sizing: border-box;
+			width: 100% !important;
+			max-width: 100% !important;
+			min-width: 0 !important;
+		}
+
+		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card,
+		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card > .trakt-card-content {
+			height: auto !important;
+		}
+	`;
+	document.head.appendChild(style);
+}
+
+function findCinetraktCollectionInsertionTarget() {
+	const summary = document.querySelector('.trakt-summary-main-content');
+	const synopsis = summary?.querySelector('.line-clamp-content');
+	if (!synopsis) return null;
+	return synopsis.closest('trakt-spoiler')
+		|| synopsis.closest('.trakt-clamped-text')
+		|| synopsis;
+}
+
+function findCinetraktPopularListsSection() {
+	return [...document.querySelectorAll('section.section-list-container, section')].find((section) => {
+		return [...section.querySelectorAll('h1, h2, h3, h4, a, button, div, span')]
+			.some((element) => /^(Popular Lists|Listes populaires)$/i.test(getCleanText(element.textContent)));
+	}) || null;
+}
+
+function findCinetraktOfficialCollectionCard() {
+	const popularListsSection = findCinetraktPopularListsSection();
+	if (!popularListsSection) return null;
+
+	const officialCards = popularListsSection.querySelectorAll(
+		'.trakt-list-summary-card[data-variant="official"]',
+	);
+	for (const officialCard of officialCards) {
+		if (!/@Trakt/i.test(officialCard.textContent || '')
+			|| officialCard.querySelectorAll('img').length < 2) continue;
+		return officialCard.closest('.trakt-card');
+	}
+
+	return null;
+}
+
+function restoreCinetraktCollectionRenderProbe() {
+	if (!cinetraktCollectionRenderProbe) return;
+
+	const { renderFor, placeholder, probe, timer, originalStyle } = cinetraktCollectionRenderProbe;
+	window.clearTimeout(timer);
+	if (renderFor) {
+		if (originalStyle == null) renderFor.removeAttribute('style');
+		else renderFor.setAttribute('style', originalStyle);
+	}
+	if (renderFor?.isConnected && placeholder?.parentNode) {
+		placeholder.parentNode.insertBefore(renderFor, placeholder);
+	}
+	placeholder?.remove();
+	probe?.remove();
+	cinetraktCollectionRenderProbe = null;
+}
+
+function primeCinetraktPopularListsRendering(routeKey) {
+	if (cinetraktCollectionRenderProbe?.routeKey === routeKey) return;
+	if (cinetraktCollectionProbeAttemptedRoute === routeKey) return;
+	restoreCinetraktCollectionRenderProbe();
+
+	const listsWrapper = [...document.querySelectorAll('svelte-css-wrapper')].find((wrapper) => {
+		return wrapper.getAttribute('style')?.includes('--height-lists-list');
+	});
+	const renderFor = listsWrapper?.closest('trakt-render-for');
+	if (!renderFor?.parentNode) return;
+	cinetraktCollectionProbeAttemptedRoute = routeKey;
+
+	const placeholder = document.createComment('CineTrakt popular lists render position');
+	const probe = document.createElement('div');
+	const originalStyle = renderFor.getAttribute('style');
+	Object.assign(probe.style, {
+		position: 'fixed',
+		left: '240px',
+		top: '160px',
+		width: '480px',
+		height: '320px',
+		overflow: 'hidden',
+		opacity: '0',
+		pointerEvents: 'none',
+		zIndex: '-1',
+	});
+	Object.assign(renderFor.style, {
+		display: 'block',
+		width: '480px',
+		height: '320px',
+		minHeight: '320px',
+	});
+
+	renderFor.parentNode.insertBefore(placeholder, renderFor);
+	document.body.appendChild(probe);
+	probe.appendChild(renderFor);
+	const timer = window.setTimeout(() => restoreCinetraktCollectionRenderProbe(), 5000);
+	cinetraktCollectionRenderProbe = { routeKey, renderFor, placeholder, probe, timer, originalStyle };
+}
+
+function restoreCinetraktOfficialCollectionCard() {
+	restoreCinetraktCollectionRenderProbe();
+	if (!cinetraktCollectionPlacement) return;
+
+	cinetraktCollectionPlacement.host?.remove();
+	cinetraktCollectionPlacement = null;
+}
+
+function normalizeCinetraktSvgViewBoxes(root) {
+	root?.querySelectorAll('svg[viewBox]').forEach((svg) => {
+		const rawViewBox = svg.getAttribute('viewBox')?.trim() || '';
+		const exactValues = rawViewBox.split(/[\s,]+/).map(Number);
+		const hasValidViewBox = exactValues.length === 4
+			&& exactValues.every(Number.isFinite)
+			&& exactValues[2] >= 0
+			&& exactValues[3] >= 0;
+		if (hasValidViewBox) return;
+
+		const recoveredValues = rawViewBox.match(/-?(?:\d+\.?\d*|\.\d+)/g)?.map(Number) || [];
+		if (recoveredValues.length === 4
+			&& recoveredValues.every(Number.isFinite)
+			&& recoveredValues[2] >= 0
+			&& recoveredValues[3] >= 0) {
+			svg.setAttribute('viewBox', recoveredValues.join(' '));
+		} else {
+			svg.removeAttribute('viewBox');
+		}
+	});
+}
+
+function placeCinetraktOfficialCollectionCard() {
+	const routeKey = window.location.pathname;
+	const isMoviePage = /^\/movies\/[^/]+\/?$/.test(routeKey);
+	if (!isMoviePage) {
+		restoreCinetraktOfficialCollectionCard();
+		cinetraktCollectionProbeAttemptedRoute = '';
+		return;
+	}
+
+	if (cinetraktCollectionPlacement
+		&& (cinetraktCollectionPlacement.routeKey !== routeKey
+			|| !cinetraktCollectionPlacement.host?.isConnected)) {
+		restoreCinetraktOfficialCollectionCard();
+	}
+	if (cinetraktCollectionPlacement) return;
+
+	const insertionTarget = findCinetraktCollectionInsertionTarget();
+	const collectionCard = findCinetraktOfficialCollectionCard();
+	if (!insertionTarget) return;
+	if (!collectionCard) {
+		primeCinetraktPopularListsRendering(routeKey);
+		return;
+	}
+
+	injectCinetraktCollectionCardStyles();
+	const host = document.createElement('div');
+	host.id = CINETRAKT_COLLECTION_HOST_ID;
+	host.dataset.cinetraktRoute = routeKey;
+	normalizeCinetraktSvgViewBoxes(collectionCard);
+	const collectionCardCopy = collectionCard.cloneNode(true);
+	collectionCardCopy.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
+	collectionCardCopy.querySelectorAll('img').forEach((image) => image.setAttribute('loading', 'eager'));
+	normalizeCinetraktSvgViewBoxes(collectionCardCopy);
+	restoreCinetraktCollectionRenderProbe();
+	insertionTarget.insertAdjacentElement('afterend', host);
+	host.appendChild(collectionCardCopy);
+	cinetraktCollectionPlacement = { routeKey, host };
+}
+
+function getCinetraktSidebarEntryWrapper(candidate, boundary) {
+	let wrapper = candidate;
+	for (let element = candidate.parentElement; element && element !== boundary; element = element.parentElement) {
+		const interactiveElements = element.querySelectorAll(
+			'a[href], button, [role="link"]:not(a), [role="button"]:not(button)',
+		);
+		if (interactiveElements.length > 1) break;
+		wrapper = element;
+	}
+	return wrapper;
+}
+
+function hideCinetraktUnusedTraktNavigationEntries() {
+	const sidebar = document.querySelector('.trakt-side-navbar');
+	const bottom = sidebar?.querySelector(':scope > .trakt-side-navbar-bottom');
+	const content = sidebar?.querySelector(':scope > .trakt-side-navbar-content');
+	if (!bottom && !content) return;
+
+	if (!document.getElementById('cinetrakt-hidden-navigation-style')) {
+		const style = document.createElement('style');
+		style.id = 'cinetrakt-hidden-navigation-style';
+		style.textContent = '.cinetrakt-hidden-navigation-entry { display: none !important; }';
+		document.head.appendChild(style);
+	}
+
+	const targets = [
+		{
+			boundary: bottom,
+			matches: (labels, href) => labels.some((label) => [
+				'library',
+				'librairie',
+				'bibliothèque',
+				'bibliotheque',
+			].includes(label)) || /(^|\/)library(?:\/|\?|#|$)/i.test(href),
+		},
+		{
+			boundary: content,
+			matches: (labels, href) => labels.some((label) => label === 'collaborations')
+				|| /(^|\/)collaborations(?:\/|\?|#|$)/i.test(href),
+		},
+	];
+
+	for (const { boundary, matches } of targets) {
+		if (!boundary) continue;
+		for (const candidate of boundary.querySelectorAll(
+			'a[href], button, [role="link"]:not(a), [role="button"]:not(button)',
+		)) {
+			const labels = [
+				candidate.textContent,
+				candidate.getAttribute('aria-label'),
+				candidate.getAttribute('title'),
+			]
+				.map((value) => value?.trim().toLowerCase() || '')
+				.filter(Boolean);
+			const href = candidate.getAttribute('href') || '';
+			if (!matches(labels, href)) continue;
+
+			getCinetraktSidebarEntryWrapper(candidate, boundary)
+				.classList.add('cinetrakt-hidden-navigation-entry');
+		}
+	}
+}
+
+async function runStremioButtons() {
+	await globalThis.CineTraktSettings?.ready;
 	if (window.location.hostname !== "app.trakt.tv") return;
+	const posterLayoutEnabled = isCinetraktFeatureEnabled('traktPosterLayout')
+		&& /^\/(shows|movies)\/[^/]+\/?$/.test(window.location.pathname);
+	document.documentElement.classList.toggle('cinetrakt-poster-layout-enabled', posterLayoutEnabled);
+	if (posterLayoutEnabled) {
+		setupWatchOnStremioPosterSize();
+	} else {
+		cleanupWatchOnStremioPosterSize();
+	}
+
+	if (isCinetraktFeatureEnabled('traktSoundtrack')) {
+		initializeCinetraktSoundtrackFeatureForRoute();
+	} else {
+		cleanupCinetraktSoundtrackFeature({ pause: false });
+	}
+	if (isCinetraktFeatureEnabled('traktNavigationCleanup')) {
+		hideCinetraktUnusedTraktNavigationEntries();
+	}
+	if (isCinetraktFeatureEnabled('traktCollectionCard')) {
+		placeCinetraktOfficialCollectionCard();
+	} else {
+		restoreCinetraktOfficialCollectionCard();
+	}
 	if (!isTraktPageNeedingExtensionWork()) return;
 
-	setupTraktV3NativeLinkProtector();
-	protectTraktV3NativeLinks();
-	insertStremioButtonTraktV3();
-	colorizeTraktImdbRatings();
-	setupWatchOnStremioTraktMoreRatingsToggle();
-	setupWatchOnStremioPosterSize();
-	colorizeTraktPersonalRating();
-	removeLegacyStremioEpisodeButtons();
+	if (isCinetraktFeatureEnabled('traktStremioLinks')) {
+		setupTraktV3NativeLinkProtector();
+		protectTraktV3NativeLinks();
+		insertStremioButtonTraktV3();
+		removeLegacyStremioEpisodeButtons();
+	}
+	if (isCinetraktFeatureEnabled('traktRatingColors')) {
+		colorizeTraktImdbRatings();
+		colorizeTraktPersonalRating();
+	}
+	if (isCinetraktFeatureEnabled('traktRatingsToggle')
+		|| isCinetraktFeatureEnabled('imdbEpisodeRatingsPopup')) {
+		setupWatchOnStremioTraktMoreRatingsToggle();
+	}
 }
 
 function scheduleRunStremioButtons(delay = 0) {
@@ -2306,6 +3755,13 @@ window.addEventListener("load", () => scheduleRunStremioButtons(0));
 
 if (window.location.hostname === "app.trakt.tv") {
 	const traktObserver = new MutationObserver(() => scheduleRunStremioButtons(250));
+	window.addEventListener('message', handleCinetraktSpotifyEmbedMessage);
+	window.addEventListener('resize', () => scheduleCinetraktStickyPosterLayoutUpdate(80), { passive: true });
+	window.visualViewport?.addEventListener(
+		'resize',
+		() => scheduleCinetraktStickyPosterLayoutUpdate(80),
+		{ passive: true },
+	);
 
 	traktObserver.observe(document.documentElement, {
 		childList: true,
@@ -2320,7 +3776,9 @@ if (window.location.hostname === "app.trakt.tv") {
 			watchOnStremioScrollCleanupScheduled = true;
 			window.setTimeout(() => {
 				watchOnStremioScrollCleanupScheduled = false;
-				cleanupAllDuplicateStremioButtons();
+				if (isCinetraktFeatureEnabled('traktStremioLinks')) {
+					cleanupAllDuplicateStremioButtons();
+				}
 				scheduleRunStremioButtons(80);
 			}, 160);
 		},
@@ -2328,5 +3786,10 @@ if (window.location.hostname === "app.trakt.tv") {
 	);
 
 	window.setInterval(runStremioButtons, 2500);
-	window.setInterval(cleanupAllDuplicateStremioButtons, 1200);
+	window.setInterval(() => {
+		if (isCinetraktFeatureEnabled('traktStremioLinks')) cleanupAllDuplicateStremioButtons();
+	}, 1200);
+	window.addEventListener('pagehide', () => {
+		cleanupCinetraktSoundtrackFeature({ pause: isCinetraktFeatureEnabled('traktSoundtrack') });
+	});
 }

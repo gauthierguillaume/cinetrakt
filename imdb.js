@@ -272,7 +272,15 @@ function isCineTraktRatingsPopupMode() {
 	}
 
 	function runImdbButtons() {
+		if (!globalThis.CineTraktSettings?.loaded) {
+			globalThis.CineTraktSettings?.ready.then(runImdbButtons);
+			return;
+		}
 		if (isCineTraktRatingsPopupMode()) {
+			document.querySelectorAll('.trakt-header-btn').forEach((button) => button.remove());
+			return;
+		}
+		if (!globalThis.CineTraktSettings.isEnabled('imdbTraktButton')) {
 			document.querySelectorAll('.trakt-header-btn').forEach((button) => button.remove());
 			return;
 		}
@@ -1434,9 +1442,11 @@ function isCineTraktRatingsPopupMode() {
     function runUpdates() {
 		globalThis.CineTraktUpdateImdbButton?.();
 		if (isCineTraktRatingsPopupMode()) {
+			if (!globalThis.CineTraktSettings.isEnabled('imdbEpisodeRatingsPopup')) return;
 			setupCineTraktRatingsPopupMode();
 			return;
 		}
+		if (!globalThis.CineTraktSettings.isEnabled('imdbRatingColors')) return;
 
         removeOldElements();
         colorizeHeatmap();
@@ -1446,8 +1456,13 @@ function isCineTraktRatingsPopupMode() {
     }
 
     function init() {
-        injectStyles();
+		if (globalThis.CineTraktSettings.isEnabled('imdbRatingColors')
+			|| (isCineTraktRatingsPopupMode()
+				&& globalThis.CineTraktSettings.isEnabled('imdbEpisodeRatingsPopup'))) {
+			injectStyles();
+		}
 		if (isCineTraktRatingsPopupMode()) {
+			if (!globalThis.CineTraktSettings.isEnabled('imdbEpisodeRatingsPopup')) return;
 			document.documentElement.classList.add('cinetrakt-ratings-popup-mode');
 			document.body.classList.add('cinetrakt-ratings-popup-mode');
 			getRatingsPopupLoadingElement();
@@ -1477,5 +1492,5 @@ function isCineTraktRatingsPopupMode() {
         });
     }
 
-    init();
+	globalThis.CineTraktSettings.ready.then(init);
 })();

@@ -8,8 +8,21 @@
   },
   "content_scripts": [
     {
+      "run_at": "document_start",
+      "css": [
+        "trakt-early.css"
+      ],
+      "js": [
+        "trakt-bootstrap.js"
+      ],
+      "matches": [
+        "https://app.trakt.tv/*"
+      ]
+    },
+    {
       "run_at": "document_idle",
       "js": [
+        "settings.js",
         "ratings-table.js",
         "imdb.js"
       ],
@@ -21,6 +34,7 @@
     {
       "run_at": "document_idle",
       "js": [
+        "settings.js",
         "trakt.js"
       ],
       "matches": [
@@ -30,10 +44,22 @@
     {
       "run_at": "document_idle",
       "js": [
+        "settings.js",
         "stremio.js"
       ],
       "matches": [
         "https://web.stremio.com/*"
+      ]
+    },
+    {
+      "run_at": "document_idle",
+      "all_frames": true,
+      "js": [
+        "settings.js",
+        "spotify-embed.js"
+      ],
+      "matches": [
+        "https://open.spotify.com/embed*"
       ]
     }
   ],
@@ -45,7 +71,9 @@
   "host_permissions": [
     "https://app.trakt.tv/*",
     "https://web.stremio.com/*",
-    "https://www.imdb.com/*"
+    "https://www.imdb.com/*",
+    "https://api.themoviedb.org/*",
+    "https://image.tmdb.org/*"
   ],
   "icons": {
     "16": "favicon.png",
@@ -54,6 +82,7 @@
     "128": "favicon.png"
   },
   "action": {
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "favicon.png",
       "32": "favicon.png",

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>CineTrakt</title>
+		<link rel="stylesheet" href="popup.css">
+	</head>
+	<body>
+		<header class="app-header">
+			<img src="favicon.png" alt="" width="38" height="38">
+			<div>
+				<h1>CineTrakt</h1>
+				<p>Personnaliser les fonctionnalites</p>
+			</div>
+		</header>
+
+		<main>
+			<div class="master-row">
+				<div>
+					<strong>Tout activer</strong>
+					<span id="enabled-count"></span>
+				</div>
+				<label class="switch" title="Activer ou desactiver toutes les fonctionnalites">
+					<input id="master-toggle" type="checkbox" aria-label="Activer toutes les fonctionnalites">
+					<span aria-hidden="true"></span>
+				</label>
+			</div>
+
+			<div id="feature-groups"></div>
+		</main>
+
+		<footer>
+			<p id="status" role="status" aria-live="polite">Les changements seront appliques apres validation.</p>
+			<div class="footer-actions">
+				<button id="reset-button" class="button secondary" type="button">Reinitialiser</button>
+				<button id="apply-button" class="button primary" type="button">Appliquer</button>
+			</div>
+		</footer>
+
+		<script src="settings.js"></script>
+		<script src="popup.js"></script>
+	</body>
+</html>
