@@ -14,6 +14,7 @@
       ],
       "js": [
         "settings.js",
+        "poster-layout-utils.js",
         "trakt-bootstrap.js"
       ],
       "matches": [
@@ -45,6 +46,7 @@
         "extension-protocol.js",
         "stremio-url.js",
         "stremio-open.js",
+        "trakt-imdb-resolver.js",
         "trakt-imdb-cache.js",
         "spotify-protocol.js",
         "dom-runtime.js",
@@ -90,6 +92,7 @@
   ],
   "host_permissions": [
     "https://app.trakt.tv/*",
+    "https://api.trakt.tv/*",
     "https://web.stremio.com/*",
     "https://www.imdb.com/*",
     "https://api.themoviedb.org/*",

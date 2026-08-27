@@ -21,9 +21,11 @@ Spotify embeds, and the new-tab page. The code is organized around three rules:
 | Extension popup | `popup.js` | Edit feature settings and the local TMDB credential |
 | New tab | `newtab.js` | Select and render random TMDB movie or series artwork |
 
-`settings.js`, `trakt-bootstrap.js`, and `trakt-early.css` run at `document_start` on
-Trakt. The bootstrap only prevents the native poster layout from flashing before the
-main content script loads; `settings.js` is not injected a second time at `document_idle`.
+`settings.js`, `poster-layout-utils.js`, `trakt-bootstrap.js`, and `trakt-early.css` run at
+`document_start` on Trakt. The bootstrap only prevents the native poster layout from
+flashing before the main content script loads and only does so when the viewport can
+preserve enough room for Trakt's responsive content. `settings.js` is not injected a
+second time at `document_idle`.
 
 ## Shared Foundation
 
@@ -34,6 +36,10 @@ main content script loads; `settings.js` is not injected a second time at `docum
 - `stremio-url.js`: construction and validation of Trakt/Stremio media URLs.
 - `stremio-open.js`: one user action to one extension message, with no delayed navigation retry.
 - `spotify-protocol.js`: shared Spotify message names and trusted origins for both frames.
+- `trakt-imdb-resolver.js`: validates Trakt media paths and extracts IMDb IDs from official
+  Trakt API responses for the service worker.
+- `poster-layout-utils.js`: pure viewport thresholds for enabling the fixed poster without
+  clipping Trakt's responsive content.
 - `window-layout.js`: pure monitor selection and popup geometry calculations.
 - `tmdb-utils.js`: image language selection, media configuration, sorting, and shuffle helpers.
 
@@ -42,7 +48,8 @@ runtime with the selectors and timing appropriate to each site.
 
 ## Trakt Modules
 
-- `trakt-stremio-ui.js`: IMDb ID discovery, Stremio links, episode title links, and Continue Watching.
+- `trakt-stremio-ui.js`: cached IMDb ID discovery through the service worker, Stremio links,
+  episode title links, and Continue Watching.
 - `trakt-ratings.js`: `/10` labels, rating colors, stars, source toggle, and IMDb Ratings launcher.
 - `trakt-poster-layout.js`: the fixed poster rail, controls placement, sizing, and responsive cleanup.
 - `trakt-soundtrack.js`: Spotify metadata, sidebar artwork, playback state, and finite autoplay retries.
@@ -86,6 +93,8 @@ remain where changing them could break persisted state, CSS, or page integration
 ## Security Boundaries
 
 - The service worker accepts Stremio-open requests only from `https://app.trakt.tv/`.
+- Trakt-to-IMDb lookup requests accept only `https://app.trakt.tv/` senders and exact movie or
+  show detail paths before querying `https://api.trakt.tv/` with Trakt's public web client ID.
 - Stremio destinations must pass `isStremioWebUrl` and contain a valid IMDb detail route.
 - Spotify messages are accepted only from the expected iframe window and Spotify origin.
 - The TMDB credential is never inserted into content pages or committed to the repository.

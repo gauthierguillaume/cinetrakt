@@ -66,14 +66,36 @@
 	}
 
 	function getEpisodeDataFromTraktUrl(url, origin = globalThis.location?.origin || '') {
-		const match = String(url || '').match(/\/shows\/([^/?#]+)\/seasons\/(\d+)\/episodes\/(\d+)/);
-		if (!match) return null;
+		let parsed;
+		try {
+			parsed = new URL(String(url || ''), origin || 'https://app.trakt.tv');
+		} catch {
+			return null;
+		}
+
+		const legacyMatch = parsed.pathname.match(
+			/^\/shows\/([^/?#]+)\/seasons\/(\d+)\/episodes\/(\d+)\/?$/i,
+		);
+		const showMatch = parsed.pathname.match(/^\/shows\/([^/?#]+)\/?$/i);
+		const showSlug = legacyMatch?.[1] || showMatch?.[1];
+		const seasonValue = legacyMatch?.[2] || parsed.searchParams.get('season');
+		const episodeValue = legacyMatch?.[3] || parsed.searchParams.get('episode');
+
+		if (!showSlug || !/^\d+$/.test(seasonValue || '') || !/^\d+$/.test(episodeValue || '')) {
+			return null;
+		}
+
+		const season = Number.parseInt(seasonValue, 10);
+		const episode = Number.parseInt(episodeValue, 10);
+		if (!Number.isSafeInteger(season) || season < 0 || !Number.isSafeInteger(episode) || episode < 1) {
+			return null;
+		}
 
 		return {
-			showSlug: match[1],
-			season: Number.parseInt(match[2], 10),
-			episode: Number.parseInt(match[3], 10),
-			showUrl: `${origin}/shows/${match[1]}`,
+			showSlug,
+			season,
+			episode,
+			showUrl: `${parsed.origin}/shows/${showSlug}`,
 		};
 	}
 

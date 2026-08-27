@@ -5,15 +5,23 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.resolve(__dirname, '..', 'background.js'), 'utf8');
 
-test('service worker imports shared URL and window layout helpers', () => {
-	assert.match(source, /importScripts\("settings\.js", "extension-protocol\.js", "stremio-url\.js", "window-layout\.js"\)/);
+test('service worker imports shared URL, media resolver, and window layout helpers', () => {
+	assert.match(source, /importScripts\("settings\.js", "extension-protocol\.js", "stremio-url\.js", "trakt-imdb-resolver\.js", "window-layout\.js"\)/);
 	assert.match(source, /const \{ MESSAGE_TYPES \} = globalThis\.CineTraktExtensionProtocol/);
 	assert.match(source, /const \{ isStremioWebUrl \} = globalThis\.CineTraktStremioUrls/);
 	assert.match(source, /getPopupLayout/);
 });
 
+test('Trakt IMDb resolution uses the official API for trusted app senders', () => {
+	assert.match(source, /MESSAGE_TYPES\.RESOLVE_TRAKT_IMDB_ID/);
+	assert.match(source, /hasExactOrigin\(senderUrl, TRAKT_APP_ORIGIN\)/);
+	assert.match(source, /getTraktApiMediaUrl\(pathname\)/);
+	assert.match(source, /'trakt-api-key': TRAKT_API_CLIENT_ID/);
+});
+
 test('Stremio requests are limited to trusted Trakt senders and valid final URLs', () => {
-	assert.match(source, /senderUrl\.startsWith\("https:\/\/app\.trakt\.tv\/"\)/);
+	assert.match(source, /new URL\(String\(value \|\| ""\)\)\.origin === expectedOrigin/);
+	assert.equal((source.match(/hasExactOrigin\(senderUrl, TRAKT_APP_ORIGIN\)/g) || []).length, 3);
 	assert.match(source, /!isStremioWebUrl\(message\.url\)/);
 });
 

@@ -48,6 +48,26 @@ test('episode detail routes expose their parent show URL', () => {
 	);
 });
 
+test('current Trakt episode drawer routes expose their parent show URL', () => {
+	assert.deepEqual(
+		getEpisodeDataFromTraktUrl(
+			'https://app.trakt.tv/shows/the-witcher-2019?view=episode&season=4&episode=1&mode=media',
+		),
+		{
+			showSlug: 'the-witcher-2019',
+			season: 4,
+			episode: 1,
+			showUrl: 'https://app.trakt.tv/shows/the-witcher-2019',
+		},
+	);
+	assert.equal(
+		getEpisodeDataFromTraktUrl(
+			'https://app.trakt.tv/shows/the-witcher-2019?mode=media&season=4',
+		),
+		null,
+	);
+});
+
 test('web URLs keep episode colons readable by the Stremio router', () => {
 	const episodeUrl = buildStremioEpisodeUrl('tt14688458', 3, 7);
 	assert.equal(

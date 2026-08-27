@@ -14,34 +14,6 @@ html.cinetrakt-poster-layout-enabled .trakt-summary-container {
 		minmax(220px, 320px) !important;
 }
 
-html.cinetrakt-poster-layout-enabled .trakt-summary-container:not(.watch-on-stremio-poster-size-ready) .trakt-summary-poster-container,
-html.cinetrakt-poster-layout-enabled .trakt-summary-container:not(.watch-on-stremio-poster-size-ready) .trakt-summary-poster {
-	width: var(--cinetrakt-early-poster-width) !important;
-	max-width: var(--cinetrakt-early-poster-width) !important;
-	height: auto !important;
-	min-height: 0 !important;
-	max-height: none !important;
-	aspect-ratio: auto !important;
-	overflow: visible !important;
-}
-
-html.cinetrakt-poster-layout-enabled .trakt-summary-container:not(.watch-on-stremio-poster-size-ready) .trakt-summary-poster > a {
-	display: block !important;
-	width: 100% !important;
-	height: auto !important;
-	aspect-ratio: auto !important;
-}
-
-html.cinetrakt-poster-layout-enabled .trakt-summary-container:not(.watch-on-stremio-poster-size-ready) .trakt-summary-poster img {
-	display: block !important;
-	width: 100% !important;
-	height: auto !important;
-	min-height: 0 !important;
-	max-height: none !important;
-	aspect-ratio: auto !important;
-	object-fit: contain !important;
-}
-
 @media (max-width: 1100px) {
 	html.cinetrakt-poster-layout-enabled {
 		--cinetrakt-early-poster-width: clamp(

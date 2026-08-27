@@ -6,6 +6,12 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 
+test('Trakt integration uses only the current web app and official API origins', () => {
+	assert.ok(manifest.host_permissions.includes('https://app.trakt.tv/*'));
+	assert.ok(manifest.host_permissions.includes('https://api.trakt.tv/*'));
+	assert.equal(manifest.host_permissions.includes('https://trakt.tv/*'), false);
+});
+
 function assertLocalFileExists(file) {
 	assert.equal(fs.existsSync(path.join(root, file)), true, `${file} does not exist`);
 }

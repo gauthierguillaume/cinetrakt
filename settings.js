@@ -22,7 +22,7 @@
 	const DEFINITIONS = Object.freeze([
 		{ key: 'traktStremioLinks', group: 'Trakt', title: 'Ouverture Stremio', description: 'Jaquettes et titres d’episodes ouvrent directement Stremio.' },
 		{ key: 'traktRatingColors', group: 'Trakt', title: 'Notes et etoiles', description: 'Affiche les notes /10 et applique les couleurs aux notes et etoiles.' },
-		{ key: 'traktRatingsToggle', group: 'Trakt', title: 'Notes supplementaires', description: 'Ajoute le bouton pour afficher ou masquer les autres sources de notes.' },
+		{ key: 'traktRatingsToggle', group: 'Trakt', title: 'IMDb uniquement', description: 'Masque les autres sources sur la fiche tout en conservant le panneau natif des notes.' },
 		{ key: 'imdbEpisodeRatingsPopup', group: 'Trakt', title: 'IMDb Ratings', description: 'Ajoute le bouton Heatmap et la fenetre des notes par episode.' },
 		{ key: 'traktPosterLayout', group: 'Trakt', title: 'Grande affiche', description: 'Conserve la mise en page CineTrakt avec une affiche agrandie.' },
 		{ key: 'traktSoundtrack', group: 'Trakt', title: 'Lecteur Soundtrack', description: 'Affiche la pochette Spotify et le controle dans la barre laterale.' },

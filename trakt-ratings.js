@@ -21,6 +21,46 @@
 	function isCinetraktFeatureEnabled(key) {
 		return globalThis.CineTraktSettings?.isEnabled(key) !== false;
 	}
+
+	let cinetraktRatingColorsEnabled = null;
+
+	function setCinetraktTextIfChanged(element, value) {
+		const nextText = String(value ?? '');
+		if (element && element.textContent !== nextText) element.textContent = nextText;
+	}
+
+	function setCinetraktDatasetIfChanged(element, key, value) {
+		const nextValue = String(value);
+		if (element?.dataset && element.dataset[key] !== nextValue) {
+			element.dataset[key] = nextValue;
+		}
+	}
+
+	function setCinetraktImportantStyleIfChanged(element, property, value) {
+		if (!element) return;
+		if (
+			element.style.getPropertyValue(property) !== value
+			|| element.style.getPropertyPriority(property) !== 'important'
+		) {
+			element.style.setProperty(property, value, 'important');
+		}
+	}
+
+	function removeCinetraktStyleIfPresent(element, property) {
+		if (!element) return;
+		if (
+			element.style.getPropertyValue(property)
+			|| element.style.getPropertyPriority(property)
+		) {
+			element.style.removeProperty(property);
+		}
+	}
+
+	function toggleCinetraktClass(element, className, enabled) {
+		if (element && element.classList.contains(className) !== enabled) {
+			element.classList.toggle(className, enabled);
+		}
+	}
 /*
 	TRAKT V3 — colorisation des notes sur les fiches films / séries.
 	On cible uniquement le bloc officiel des ratings Trakt :
@@ -44,10 +84,10 @@ function colorizeWatchOnStremioTraktValue(valueElement) {
 
 	const color = getWatchOnStremioRatingColor(rating).bg;
 
-	valueElement.dataset.watchOnStremioRatingColored = "true";
-	valueElement.style.setProperty("color", color, "important");
-	valueElement.style.setProperty("text-decoration-color", color, "important");
-	valueElement.style.setProperty("text-shadow", "none", "important");
+	setCinetraktDatasetIfChanged(valueElement, 'watchOnStremioRatingColored', 'true');
+	setCinetraktImportantStyleIfChanged(valueElement, 'color', color);
+	setCinetraktImportantStyleIfChanged(valueElement, 'text-decoration-color', color);
+	setCinetraktImportantStyleIfChanged(valueElement, 'text-shadow', 'none');
 }
 
 function colorizeTraktSummaryRatings() {
@@ -153,11 +193,7 @@ function getWatchOnStremioTraktStarUnits(starsBox) {
 function setWatchOnStremioStarColor(starUnit, color, enabled) {
 	if (!starUnit) return;
 
-	if (enabled) {
-		starUnit.classList.add('wos-personal-star-colored');
-	} else {
-		starUnit.classList.remove('wos-personal-star-colored');
-	}
+	toggleCinetraktClass(starUnit, 'wos-personal-star-colored', enabled);
 
 	// Important pour les demi-étoiles Trakt :
 	// on ne force jamais fill/stroke sur les <path>/<rect>.
@@ -169,17 +205,17 @@ function setWatchOnStremioStarColor(starUnit, color, enabled) {
 
 	colorTargets.forEach((element) => {
 		if (enabled) {
-			element.style.setProperty('color', color, 'important');
+			setCinetraktImportantStyleIfChanged(element, 'color', color);
 		} else {
-			element.style.removeProperty('color');
+			removeCinetraktStyleIfPresent(element, 'color');
 		}
 	});
 
 	shapeTargets.forEach((element) => {
 		// Nettoie les anciennes versions qui forçaient le remplissage complet.
-		element.style.removeProperty('fill');
-		element.style.removeProperty('stroke');
-		element.style.removeProperty('color');
+		removeCinetraktStyleIfPresent(element, 'fill');
+		removeCinetraktStyleIfPresent(element, 'stroke');
+		removeCinetraktStyleIfPresent(element, 'color');
 	});
 }
 
@@ -260,7 +296,11 @@ function colorizeTraktPersonalRating() {
 		const label = getWatchOnStremioPersonalRatingLabel(rateNowBox);
 		if (!label) return;
 		if (!label.dataset.cinetraktOriginalRatingLabel) {
-			label.dataset.cinetraktOriginalRatingLabel = label.textContent || 'Rate';
+			setCinetraktDatasetIfChanged(
+				label,
+				'cinetraktOriginalRatingLabel',
+				label.textContent || 'Rate',
+			);
 		}
 
 		let rating10 = NaN;
@@ -271,10 +311,10 @@ function colorizeTraktPersonalRating() {
 			effectiveRatios = getWatchOnStremioStarRatiosFromRating(rating10, starUnits.length);
 
 			if (!Number.isFinite(rating10)) {
-				label.classList.remove('wos-personal-rating-value');
-				label.textContent = 'Rate';
-				label.style.removeProperty('color');
-				label.style.removeProperty('text-shadow');
+				toggleCinetraktClass(label, 'wos-personal-rating-value', false);
+				setCinetraktTextIfChanged(label, 'Rate');
+				removeCinetraktStyleIfPresent(label, 'color');
+				removeCinetraktStyleIfPresent(label, 'text-shadow');
 				starUnits.forEach((starUnit) => setWatchOnStremioStarColor(starUnit, '', false));
 				return;
 			}
@@ -284,11 +324,11 @@ function colorizeTraktPersonalRating() {
 
 		const color = getWatchOnStremioRatingColor(rating10).bg;
 
-		label.classList.add('wos-personal-rating-value');
-		label.dataset.watchOnStremioPersonalRating = 'true';
-		label.textContent = formatWatchOnStremioRatingValue(rating10);
-		label.style.setProperty('color', color, 'important');
-		label.style.setProperty('text-shadow', 'none', 'important');
+		toggleCinetraktClass(label, 'wos-personal-rating-value', true);
+		setCinetraktDatasetIfChanged(label, 'watchOnStremioPersonalRating', 'true');
+		setCinetraktTextIfChanged(label, formatWatchOnStremioRatingValue(rating10));
+		setCinetraktImportantStyleIfChanged(label, 'color', color);
+		setCinetraktImportantStyleIfChanged(label, 'text-shadow', 'none');
 
 		starUnits.forEach((starUnit, index) => {
 			setWatchOnStremioStarColor(starUnit, color, effectiveRatios[index] > 0);
@@ -320,11 +360,8 @@ function resetTraktRatingColors() {
 
 
 
-/*
-	TRAKT V3 — bouton "plus de notes".
-	Par défaut, sur une fiche film / série, on garde uniquement la note IMDb visible.
-	Les autres notes Trakt / Rotten Tomatoes / Popcorn restent dans le DOM et reviennent au clic.
-*/
+/* Sur la fiche, CineTrakt garde uniquement IMDb. Le lien natif qui enveloppe
+	les notes reste intact et continue d'ouvrir le panneau latéral complet. */
 function injectWatchOnStremioTraktMoreRatingsStyles() {
 	if (document.getElementById('watch-on-stremio-trakt-more-ratings-styles')) return;
 
@@ -335,54 +372,18 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 			display: none !important;
 		}
 
-		.wos-trakt-ratings-toggle {
-			appearance: none !important;
-			border: 0 !important;
-			background: transparent !important;
-			color: #ffffff !important;
-			width: 32px !important;
-			height: 32px !important;
-			border-radius: 10px !important;
-			padding: 4px !important;
-			margin: 0 0 0 6px !important;
+		.trakt-summary-ratings.wos-trakt-ratings-imdb-only {
 			display: inline-flex !important;
 			align-items: center !important;
-			justify-content: center !important;
-			cursor: pointer !important;
-			line-height: 1 !important;
-			flex: 0 0 auto !important;
-			opacity: 1 !important;
-			visibility: visible !important;
-			transition: background-color 120ms ease, color 120ms ease !important;
 		}
 
-		.wos-trakt-ratings-toggle:hover {
-			background: rgba(255, 255, 255, 0.14) !important;
-		}
-
-		.wos-trakt-ratings-toggle svg {
-			width: 24px !important;
-			height: 24px !important;
-			display: block !important;
-			pointer-events: none !important;
-			color: #ffffff !important;
-			fill: currentColor !important;
-			stroke: none !important;
-			opacity: 1 !important;
-			visibility: visible !important;
-			transform: rotate(0deg) !important;
-			transition: transform 120ms ease !important;
-		}
-
-		.wos-trakt-ratings-toggle svg path {
-			fill: #ffffff !important;
-			stroke: none !important;
-			opacity: 1 !important;
-			visibility: visible !important;
-		}
-
-		.wos-trakt-ratings-toggle[data-expanded="true"] svg {
-			transform: rotate(180deg) !important;
+		.wos-imdb-ratings-popup-row {
+			display: inline-flex !important;
+			flex-flow: row nowrap !important;
+			align-items: center !important;
+			width: max-content !important;
+			max-width: 100% !important;
+			vertical-align: middle !important;
 		}
 
 		.wos-imdb-ratings-popup-button {
@@ -397,20 +398,24 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 			margin: 0 0 0 6px !important;
 			padding: 0 !important;
 			border: 0 !important;
-			border-radius: 0 !important;
+			border-radius: 5px !important;
 			color: rgba(255, 255, 255, 0.52) !important;
 			background: transparent !important;
 			box-shadow: none !important;
 			outline: none !important;
 			cursor: pointer !important;
-			transition: color 140ms ease !important;
+			pointer-events: auto !important;
+			position: relative !important;
+			z-index: 3 !important;
+			transition: background-color 140ms ease, color 140ms ease, transform 140ms ease !important;
 		}
 
 		.wos-imdb-ratings-popup-button:hover {
-			color: rgba(255, 255, 255, 0.8) !important;
-			background: transparent !important;
+			color: rgba(255, 255, 255, 0.9) !important;
+			background: rgba(255, 255, 255, 0.08) !important;
 			border: 0 !important;
 			box-shadow: none !important;
+			transform: scale(1.04) !important;
 		}
 
 		.wos-imdb-ratings-popup-button:focus-visible {
@@ -441,7 +446,7 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 
 		.wos-imdb-ratings-popup-button:hover svg,
 		.wos-imdb-ratings-popup-button:focus-visible svg {
-			transform: scale(1.1) !important;
+			transform: scale(1.04) !important;
 		}
 
 		.wos-imdb-ratings-popup-button[hidden] {
@@ -459,13 +464,30 @@ function isWatchOnStremioImdbRatingItem(ratingItem) {
 
 	const text = (ratingItem.textContent || '').toLowerCase();
 	if (text.includes('imdb')) return true;
+	const svgTitle = Array.from(ratingItem.querySelectorAll('svg title'))
+		.some((title) => (title.textContent || '').toLowerCase().includes('imdb'));
+	if (svgTitle) return true;
 
 	const img = ratingItem.querySelector('img[alt*="IMDb" i], svg[aria-label*="IMDb" i], [title*="IMDb" i]');
-	return !!img;
+	if (img) return true;
+
+	// Trakt's current inline IMDb mark has no accessible label. Its official
+	// logo geometry is distinctive and more stable than generated Svelte classes.
+	const imdbLogo = Array.from(ratingItem.querySelectorAll('svg')).some((svg) => {
+		const viewBox = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+		if (viewBox.length !== 4 || viewBox.some((value) => !Number.isFinite(value))) return false;
+		const [, , width, height] = viewBox;
+		const usesImdbYellow = Array.from(svg.querySelectorAll('[fill]'))
+			.some((element) => (element.getAttribute('fill') || '').toLowerCase() === '#f6c700');
+		return width > 500 && height > 250 && width / height > 1.8 && usesImdbYellow;
+	});
+	return imdbLogo;
 }
 
 function getWatchOnStremioTraktRatingItems(summaryRatings) {
 	if (!summaryRatings) return [];
+	const rowRatings = Array.from(summaryRatings.querySelectorAll('rating[data-variant="row"]'));
+	if (rowRatings.length) return rowRatings;
 
 	return Array.from(summaryRatings.children).filter((child) => {
 		if (child.classList?.contains('wos-trakt-ratings-toggle')) return false;
@@ -545,51 +567,83 @@ function createWatchOnStremioImdbRatingsPopupButton(imdbId) {
 	return button;
 }
 
-function createWatchOnStremioTraktRatingsToggle(summaryRatings) {
-	const button = document.createElement('button');
-	button.type = 'button';
-	button.className = 'wos-trakt-ratings-toggle';
-	button.setAttribute('aria-label', 'Afficher les autres notes');
-	button.setAttribute('title', 'Afficher les autres notes');
-	button.innerHTML = `
-		<svg viewBox="0 -960 960 960" width="24" height="24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-			<path d="M480-360 320-520h320L480-360Zm0 280q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm0-80q134 0 227-93t93-227q0-134-93-227t-227-93q-134 0-227 93t-93 227q0 134 93 227t227 93Zm0-320Z"></path>
-		</svg>
-	`;
-
-	button.addEventListener('click', (event) => {
-		event.preventDefault();
-		event.stopPropagation();
-
-		const expanded = summaryRatings.dataset.watchOnStremioRatingsExpanded === 'true';
-		summaryRatings.dataset.watchOnStremioRatingsExpanded = expanded ? 'false' : 'true';
-		updateWatchOnStremioTraktRatingsVisibility(summaryRatings);
-	});
-
-	return button;
-}
-
 function updateWatchOnStremioTraktRatingsVisibility(summaryRatings) {
 	if (!summaryRatings) return;
 
-	const expanded = summaryRatings.dataset.watchOnStremioRatingsExpanded === 'true';
 	const ratingItems = getWatchOnStremioTraktRatingItems(summaryRatings);
 	const imdbItem = ratingItems.find(isWatchOnStremioImdbRatingItem);
-	const toggle = summaryRatings.querySelector(':scope > .wos-trakt-ratings-toggle');
 
 	ratingItems.forEach((item) => {
-		if (item === imdbItem || expanded) {
+		if (item === imdbItem) {
 			item.classList.remove('wos-trakt-rating-hidden');
 		} else {
 			item.classList.add('wos-trakt-rating-hidden');
 		}
 	});
+	summaryRatings.classList.toggle('wos-trakt-ratings-imdb-only', !!imdbItem);
+}
 
-	if (toggle) {
-		toggle.dataset.expanded = expanded ? 'true' : 'false';
-		toggle.setAttribute('aria-label', expanded ? 'Masquer les autres notes' : 'Afficher les autres notes');
-		toggle.setAttribute('title', expanded ? 'Masquer les autres notes' : 'Afficher les autres notes');
+function getWatchOnStremioRatingsPopupPlacementAnchor(summaryRatings) {
+	const nativeInteractive = summaryRatings.closest(
+		'a[href], button, [role="button"], [role="link"]',
+	);
+	return nativeInteractive || summaryRatings;
+}
+
+function unwrapWatchOnStremioRatingsPopupRow(row) {
+	if (!row?.parentNode) {
+		row?.remove();
+		return;
 	}
+
+	const parent = row.parentNode;
+	row.querySelector(':scope > .wos-imdb-ratings-popup-button')?.remove();
+	while (row.firstChild) parent.insertBefore(row.firstChild, row);
+	row.remove();
+}
+
+function resetWatchOnStremioRatingsPopupRows(exceptRow = null) {
+	document.querySelectorAll('.wos-imdb-ratings-popup-row').forEach((row) => {
+		if (row === exceptRow) return;
+
+		if (row.dataset.cinetraktRatingsPopupRow === 'true') {
+			unwrapWatchOnStremioRatingsPopupRow(row);
+		} else {
+			// Nettoie la classe posée par l'ancienne implémentation sur le gros
+			// conteneur de résumé. C'est elle qui mettait titre / notes / Activities
+			// sur la même ligne.
+			row.classList.remove('wos-imdb-ratings-popup-row');
+		}
+	});
+}
+
+function ensureWatchOnStremioRatingsPopupRow(placementAnchor) {
+	if (!placementAnchor?.parentNode) return null;
+
+	const currentParent = placementAnchor.parentElement;
+	if (
+		currentParent?.classList.contains('wos-imdb-ratings-popup-row')
+		&& currentParent.dataset.cinetraktRatingsPopupRow === 'true'
+	) {
+		resetWatchOnStremioRatingsPopupRows(currentParent);
+		return currentParent;
+	}
+
+	resetWatchOnStremioRatingsPopupRows();
+
+	const row = document.createElement('span');
+	row.className = 'wos-imdb-ratings-popup-row';
+	row.dataset.cinetraktRatingsPopupRow = 'true';
+	placementAnchor.parentNode.insertBefore(row, placementAnchor);
+	row.appendChild(placementAnchor);
+	return row;
+}
+
+function getWatchOnStremioCanonicalRatingsPopupButton() {
+	const buttons = [...document.querySelectorAll('.wos-imdb-ratings-popup-button')];
+	const popupButton = buttons.shift() || null;
+	buttons.forEach((button) => button.remove());
+	return popupButton;
 }
 
 function setupWatchOnStremioTraktMoreRatingsToggle() {
@@ -607,40 +661,33 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	const ratingsToggleEnabled = isCinetraktFeatureEnabled('traktRatingsToggle');
 	const ratingsPopupEnabled = isCinetraktFeatureEnabled('imdbEpisodeRatingsPopup');
 
-	// L'IMDb doit être à gauche. Les autres notes restent juste après le bouton quand on les affiche.
-	if (summaryRatings.firstElementChild !== imdbItem) {
-		summaryRatings.insertBefore(imdbItem, summaryRatings.firstElementChild);
-	}
-
-	let toggle = summaryRatings.querySelector(':scope > .wos-trakt-ratings-toggle');
-	if (!ratingsToggleEnabled) {
-		toggle?.remove();
-		toggle = null;
-	} else if (!toggle) {
-		toggle = createWatchOnStremioTraktRatingsToggle(summaryRatings);
-	}
+	summaryRatings.querySelector(':scope > .wos-trakt-ratings-toggle')?.remove();
 
 	const isShowPage = /^\/shows\/[^/]+\/?$/.test(window.location.pathname);
-	let popupButton = summaryRatings.querySelector(':scope > .wos-imdb-ratings-popup-button');
+	let popupButton = getWatchOnStremioCanonicalRatingsPopupButton();
 	const imdbId = isShowPage && ratingsPopupEnabled ? getWatchOnStremioImdbRatingsId(summaryRatings) : '';
 
-	if (popupButton && (!imdbId || popupButton.dataset.imdbId !== imdbId)) {
+	if (popupButton && (!isShowPage || !ratingsPopupEnabled)) {
 		popupButton.remove();
 		popupButton = null;
 	}
 	if (imdbId && !popupButton) {
 		popupButton = createWatchOnStremioImdbRatingsPopupButton(imdbId);
 	}
+	if (imdbId && popupButton && popupButton.dataset.imdbId !== imdbId) {
+		popupButton.dataset.imdbId = imdbId;
+	}
 
 	if (popupButton) {
-		if (popupButton.previousElementSibling !== imdbItem) {
-			imdbItem.insertAdjacentElement('afterend', popupButton);
+		const placementAnchor = getWatchOnStremioRatingsPopupPlacementAnchor(summaryRatings);
+		const popupRow = ensureWatchOnStremioRatingsPopupRow(placementAnchor);
+		if (popupRow && placementAnchor.nextElementSibling !== popupButton) {
+			// Le bouton natif IMDb + flèche reste intact. La Heatmap est son
+			// frère immédiat, donc visuellement juste à droite de la flèche.
+			placementAnchor.insertAdjacentElement('afterend', popupButton);
 		}
-		if (toggle && toggle.previousElementSibling !== popupButton) {
-			popupButton.insertAdjacentElement('afterend', toggle);
-		}
-	} else if (toggle && toggle.previousElementSibling !== imdbItem) {
-		imdbItem.insertAdjacentElement('afterend', toggle);
+	} else {
+		resetWatchOnStremioRatingsPopupRows();
 	}
 
 	if (ratingsPopupEnabled && isShowPage && !imdbId
@@ -654,14 +701,11 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 		});
 	}
 
-	if (ratingsToggleEnabled && !summaryRatings.dataset.watchOnStremioRatingsExpanded) {
-		summaryRatings.dataset.watchOnStremioRatingsExpanded = 'false';
-	}
-
 	if (ratingsToggleEnabled) {
 		updateWatchOnStremioTraktRatingsVisibility(summaryRatings);
 	} else {
 		ratingItems.forEach((item) => item.classList.remove('wos-trakt-rating-hidden'));
+		summaryRatings.classList.remove('wos-trakt-ratings-imdb-only');
 	}
 }
 
@@ -670,15 +714,20 @@ function resetTraktRatingsControls() {
 		.forEach((element) => element.remove());
 	document.querySelectorAll('.wos-trakt-rating-hidden')
 		.forEach((element) => element.classList.remove('wos-trakt-rating-hidden'));
+	document.querySelectorAll('.wos-trakt-ratings-imdb-only')
+		.forEach((element) => element.classList.remove('wos-trakt-ratings-imdb-only'));
+	resetWatchOnStremioRatingsPopupRows();
 }
 	const api = Object.freeze({
 		setColorsEnabled(enabled) {
-			if (enabled) {
+			const nextEnabled = Boolean(enabled);
+			if (nextEnabled) {
 				colorizeTraktImdbRatings();
 				colorizeTraktPersonalRating();
-			} else {
+			} else if (cinetraktRatingColorsEnabled !== false) {
 				resetTraktRatingColors();
 			}
+			cinetraktRatingColorsEnabled = nextEnabled;
 		},
 		setControlsEnabled({ toggleEnabled, popupEnabled }) {
 			if (toggleEnabled || popupEnabled) setupWatchOnStremioTraktMoreRatingsToggle();

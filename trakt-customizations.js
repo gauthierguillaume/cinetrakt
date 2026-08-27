@@ -17,7 +17,8 @@ function injectCinetraktCollectionCardStyles() {
 		#${CINETRAKT_COLLECTION_HOST_ID} {
 			box-sizing: border-box;
 			margin-top: 20px;
-			width: 100%;
+			width: min(100%, var(--cinetrakt-collection-useful-width, 100%));
+			max-width: 100%;
 			min-width: 0;
 			--width-card: 100%;
 			--height-card: auto;
@@ -159,6 +160,41 @@ function normalizeCinetraktSvgViewBoxes(root) {
 	});
 }
 
+function getCinetraktCollectionPosterImages(collectionCard) {
+	const seenSources = new Set();
+	return Array.from(collectionCard?.querySelectorAll('img') || []).filter((image) => {
+		const source = image.currentSrc || image.src || '';
+		const rect = image.getBoundingClientRect();
+		const looksLikePoster = /\/posters\//i.test(source)
+			|| (rect.width >= 24 && rect.height > rect.width * 1.15);
+		if (!looksLikePoster || seenSources.has(source)) return false;
+		seenSources.add(source);
+		return true;
+	}).slice(0, 8);
+}
+
+function updateCinetraktCollectionCardWidth(host, collectionCard) {
+	if (!host?.isConnected || !collectionCard?.isConnected) return;
+
+	const cardRect = collectionCard.getBoundingClientRect();
+	const posterRects = getCinetraktCollectionPosterImages(collectionCard)
+		.map((image) => image.getBoundingClientRect())
+		.filter((rect) => rect.width > 0 && rect.height > 0);
+	if (!cardRect.width || !posterRects.length) return;
+
+	const firstPosterLeft = Math.min(...posterRects.map((rect) => rect.left));
+	const lastPosterRight = Math.max(...posterRects.map((rect) => rect.right));
+	const horizontalInset = Math.max(12, firstPosterLeft - cardRect.left);
+	const usefulWidth = Math.ceil(Math.max(320, lastPosterRight - cardRect.left + horizontalInset));
+	host.style.setProperty('--cinetrakt-collection-useful-width', `${usefulWidth}px`);
+}
+
+function scheduleCinetraktCollectionCardWidth(host, collectionCard) {
+	window.requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => updateCinetraktCollectionCardWidth(host, collectionCard));
+	});
+}
+
 function placeCinetraktOfficialCollectionCard() {
 	const routeKey = window.location.pathname;
 	const isMoviePage = /^\/movies\/[^/]+\/?$/.test(routeKey);
@@ -195,6 +231,7 @@ function placeCinetraktOfficialCollectionCard() {
 	restoreCinetraktCollectionRenderProbe();
 	insertionTarget.insertAdjacentElement('afterend', host);
 	host.appendChild(collectionCardCopy);
+	scheduleCinetraktCollectionCardWidth(host, collectionCardCopy);
 	cinetraktCollectionPlacement = { routeKey, host };
 }
 

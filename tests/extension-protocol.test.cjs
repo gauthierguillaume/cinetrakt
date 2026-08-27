@@ -6,6 +6,7 @@ const { MESSAGE_TYPES } = require('../extension-protocol.js');
 test('extension contexts share one stable runtime message contract', () => {
 	assert.deepEqual(MESSAGE_TYPES, {
 		OPEN_STREMIO_WEB: 'WATCH_ON_STREMIO_OPEN_WEB',
+		RESOLVE_TRAKT_IMDB_ID: 'CINETRAKT_RESOLVE_TRAKT_IMDB_ID',
 		OPEN_IMDB_RATINGS_POPUP: 'CINETRAKT_OPEN_IMDB_RATINGS_POPUP',
 		RESIZE_IMDB_RATINGS_POPUP: 'CINETRAKT_RESIZE_IMDB_RATINGS_POPUP',
 	});

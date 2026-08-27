@@ -1,4 +1,4 @@
-importScripts("settings.js", "extension-protocol.js", "stremio-url.js", "window-layout.js");
+importScripts("settings.js", "extension-protocol.js", "stremio-url.js", "trakt-imdb-resolver.js", "window-layout.js");
 
 const {
 	getFallbackDisplayBounds,
@@ -8,10 +8,24 @@ const {
 	pickBestDisplayForWindow,
 } = globalThis.CineTraktWindowLayout;
 const { isStremioWebUrl } = globalThis.CineTraktStremioUrls;
+const {
+	TRAKT_API_CLIENT_ID,
+	findImdbIdInTraktResponse,
+	getTraktApiMediaUrl,
+} = globalThis.CineTraktTraktImdbResolver;
 const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
 
 const STREMIO_WEB_WINDOW_KEY = "watchOnStremioWebWindowId";
 const IMDB_RATINGS_WINDOW_KEY = "cinetraktImdbRatingsWindowId";
+const TRAKT_APP_ORIGIN = "https://app.trakt.tv";
+
+function hasExactOrigin(value, expectedOrigin) {
+	try {
+		return new URL(String(value || "")).origin === expectedOrigin;
+	} catch {
+		return false;
+	}
+}
 
 function getSavedWindowId(callback) {
 	chrome.storage.local.get(STREMIO_WEB_WINDOW_KEY, (result) => {
@@ -345,7 +359,40 @@ function openOrReuseImdbRatingsWindow(imdbId, layout, sendResponse) {
 	});
 }
 
+async function resolveTraktImdbId(pathname) {
+	const apiUrl = getTraktApiMediaUrl(pathname);
+	if (!apiUrl) return '';
+
+	try {
+		const response = await fetch(apiUrl, {
+			credentials: 'omit',
+			headers: {
+				'trakt-api-key': TRAKT_API_CLIENT_ID,
+				'trakt-api-version': '2',
+			},
+		});
+		if (!response.ok) return '';
+		return findImdbIdInTraktResponse(await response.json());
+	} catch (error) {
+		console.warn('CineTrakt: official Trakt API IMDb lookup failed', error);
+		return '';
+	}
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type === MESSAGE_TYPES.RESOLVE_TRAKT_IMDB_ID) {
+		const senderUrl = sender?.tab?.url || sender?.url || '';
+		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN)) {
+			sendResponse({ ok: false, imdbId: '' });
+			return false;
+		}
+
+		resolveTraktImdbId(message.pathname).then((imdbId) => {
+			sendResponse({ ok: Boolean(imdbId), imdbId });
+		});
+		return true;
+	}
+
 	if (message?.type === MESSAGE_TYPES.RESIZE_IMDB_RATINGS_POPUP) {
 		resizeImdbRatingsPopup(message, sender, sendResponse);
 		return true;
@@ -354,7 +401,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	if (message?.type === MESSAGE_TYPES.OPEN_IMDB_RATINGS_POPUP) {
 		const imdbId = String(message.imdbId || "");
 		const senderUrl = sender?.tab?.url || sender?.url || "";
-		if (!/^tt\d{7,}$/.test(imdbId) || !senderUrl.startsWith("https://app.trakt.tv/")) {
+		if (!/^tt\d{7,}$/.test(imdbId) || !hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN)) {
 			sendResponse({ ok: false });
 			return false;
 		}
@@ -367,7 +414,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 	if (message?.type !== MESSAGE_TYPES.OPEN_STREMIO_WEB || !message.url) return false;
 	const senderUrl = sender?.tab?.url || sender?.url || "";
-	if (!senderUrl.startsWith("https://app.trakt.tv/") || !isStremioWebUrl(message.url)) {
+	if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || !isStremioWebUrl(message.url)) {
 		sendResponse({ ok: false });
 		return false;
 	}

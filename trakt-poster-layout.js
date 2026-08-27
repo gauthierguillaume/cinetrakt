@@ -1,8 +1,16 @@
 (() => {
 	'use strict';
-const CINETRAKT_STICKY_POSTER_RAIL_ID = 'cinetrakt-sticky-poster-rail';
-let cinetraktStickyPosterState = null;
-let cinetraktStickyPosterResizeTimer = null;
+	const CINETRAKT_STICKY_POSTER_RAIL_ID = 'cinetrakt-sticky-poster-rail';
+	const CINETRAKT_POSTER_TOP_REDUCTION = 24;
+	const CINETRAKT_POSTER_BOTTOM_SAFETY = 12;
+	const CINETRAKT_POSTER_SIDE_GAP = 16;
+	const {
+		canUseStickyLayout,
+		getViewportWidth,
+	} = globalThis.CineTraktPosterLayoutUtils;
+	let cinetraktStickyPosterState = null;
+	let cinetraktStickyPosterResizeTimer = null;
+	let cinetraktPosterLayoutRequested = false;
 
 function injectWatchOnStremioPosterSizeStyles() {
 	if (document.getElementById('watch-on-stremio-poster-size-styles')) return;
@@ -12,8 +20,10 @@ function injectWatchOnStremioPosterSizeStyles() {
 	style.textContent = `
 		/* Colonne fixe CineTrakt : commandes et affiche restent visibles pendant que
 		   le résumé et les sections suivantes défilent dans la partie droite. */
-		.trakt-summary-container.watch-on-stremio-poster-size-ready,
-		[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready {
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.trakt-summary-container.watch-on-stremio-poster-size-ready,
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready {
 			grid-template-columns:
 				minmax(0, 1fr)
 				minmax(220px, 320px) !important;
@@ -26,6 +36,9 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled,
 		html.cinetrakt-poster-layout-enabled body {
 			max-width: 100% !important;
+			/* hidden creates a vertical scroll container as a side effect when
+			   overflow-y is visible. Trakt then caps that container when a drawer
+			   opens, leaving the detail page with only a few pixels of scroll. */
 			overflow-x: clip !important;
 		}
 
@@ -34,9 +47,12 @@ function injectWatchOnStremioPosterSizeStyles() {
 			width: 100% !important;
 			max-width: 100% !important;
 			min-width: 0 !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			main.cinetrakt-sticky-poster-detail-page {
 			padding-left: var(--watch-on-stremio-sticky-content-left) !important;
 			padding-right: 24px !important;
-			overflow-x: clip !important;
 		}
 
 		main.cinetrakt-sticky-poster-detail-page > * {
@@ -47,10 +63,6 @@ function injectWatchOnStremioPosterSizeStyles() {
 
 		#${CINETRAKT_STICKY_POSTER_RAIL_ID} {
 			box-sizing: border-box !important;
-			position: fixed !important;
-			left: var(--watch-on-stremio-sticky-poster-left) !important;
-			top: var(--watch-on-stremio-sticky-poster-top) !important;
-			width: var(--watch-on-stremio-summary-poster-width) !important;
 			display: flex !important;
 			flex-direction: column !important;
 			align-items: center !important;
@@ -61,6 +73,67 @@ function injectWatchOnStremioPosterSizeStyles() {
 
 		#${CINETRAKT_STICKY_POSTER_RAIL_ID} > * {
 			pointer-events: auto !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			#${CINETRAKT_STICKY_POSTER_RAIL_ID} {
+			position: fixed !important;
+			left: var(--watch-on-stremio-sticky-poster-left) !important;
+			top: var(--watch-on-stremio-sticky-poster-top) !important;
+			width: var(--watch-on-stremio-summary-poster-width) !important;
+		}
+
+		html.cinetrakt-poster-layout-compact #${CINETRAKT_STICKY_POSTER_RAIL_ID} {
+			position: relative !important;
+			inset: auto !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			min-width: 0 !important;
+			align-self: start !important;
+			z-index: 1 !important;
+		}
+
+		.cinetrakt-sticky-poster-stage {
+			box-sizing: border-box !important;
+			position: relative !important;
+			min-height: 0 !important;
+			max-height: none !important;
+			margin-bottom: var(--cinetrakt-poster-decoration-overflow, 0px) !important;
+			isolation: isolate !important;
+			overflow: visible !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.cinetrakt-sticky-poster-stage {
+			width: var(--watch-on-stremio-summary-poster-width) !important;
+			max-width: var(--watch-on-stremio-summary-poster-width) !important;
+			height: var(--watch-on-stremio-summary-poster-height) !important;
+		}
+
+		html.cinetrakt-poster-layout-compact .cinetrakt-sticky-poster-stage {
+			width: 100% !important;
+			max-width: 100% !important;
+			height: auto !important;
+			aspect-ratio: var(--cinetrakt-poster-aspect-ratio) !important;
+		}
+
+		.cinetrakt-sticky-poster-stage[data-cinetrakt-stremio-target="true"] {
+			cursor: pointer !important;
+			border-radius: var(--cinetrakt-poster-border-radius, 8px) !important;
+		}
+
+		.cinetrakt-sticky-poster-stage[data-cinetrakt-stremio-target="true"]:focus-visible {
+			outline: 2px solid rgba(177, 66, 211, 0.9) !important;
+			outline-offset: 3px !important;
+		}
+
+		/* Le composant Trakt reste l'unique poster affiché. Son survol ne modifie
+		   ni l'image ni sa géométrie ; seul le curseur indique qu'il est cliquable. */
+		html.cinetrakt-poster-layout-enabled
+			.watch-on-stremio-summary-poster-sized
+			.trakt-summary-poster.has-active-overlay:hover img {
+			border: 0 solid transparent !important;
+			filter: none !important;
 		}
 
 		.cinetrakt-sticky-poster-controls {
@@ -77,10 +150,35 @@ function injectWatchOnStremioPosterSizeStyles() {
 			gap: 6px !important;
 		}
 
+		/* La barre d'actions est placée sous l'affiche. Son menu contextuel doit
+		   donc se déployer au-dessus, sans recouvrir ce qui suit dans la page. */
+		.cinetrakt-sticky-poster-controls
+			.trakt-summary-actions-bar:has(.trakt-media-actions-popup-button.is-opened) {
+			border-start-start-radius: 0 !important;
+			border-start-end-radius: 0 !important;
+			border-end-start-radius: var(--border-radius-l) !important;
+			border-end-end-radius: var(--border-radius-l) !important;
+		}
+
+		.cinetrakt-sticky-poster-controls .trakt-summary-actions-slider {
+			top: auto !important;
+			bottom: 100% !important;
+			clip-path: inset(-100vmax -100vmax 0 -100vmax) !important;
+			border-start-start-radius: var(--border-radius-l) !important;
+			border-start-end-radius: var(--border-radius-l) !important;
+			border-end-start-radius: 0 !important;
+			border-end-end-radius: 0 !important;
+		}
+
 		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized {
-			width: var(--watch-on-stremio-summary-poster-width) !important;
-			max-width: var(--watch-on-stremio-summary-poster-width) !important;
-			height: var(--watch-on-stremio-summary-poster-height) !important;
+			box-sizing: border-box !important;
+			position: absolute !important;
+			inset: 0 !important;
+			z-index: 1 !important;
+			--summary-poster-width: var(--watch-on-stremio-summary-poster-width) !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			height: 100% !important;
 			min-height: 0 !important;
 			max-height: none !important;
 			aspect-ratio: auto !important;
@@ -99,29 +197,39 @@ function injectWatchOnStremioPosterSizeStyles() {
 			overflow: visible !important;
 		}
 
-		html.cinetrakt-poster-layout-enabled .watch-on-stremio-summary-poster-sized img {
-			width: 100% !important;
-			height: 100% !important;
-			min-height: 0 !important;
-			max-height: none !important;
-			aspect-ratio: auto !important;
-			object-fit: contain !important;
+		/* CineTrakt remplace seulement l'interaction de la jaquette. Le panneau
+		   promotionnel natif (service + bouton lecture) reste hors de cette vue. */
+		html.cinetrakt-poster-layout-enabled
+			.watch-on-stremio-summary-poster-sized
+			.trakt-summary-poster-overlay {
+			display: none !important;
 		}
 
-		.watch-on-stremio-poster-size-ready .trakt-summary-content,
-		.watch-on-stremio-poster-size-ready [class*="trakt-summary-content"] {
+		html.cinetrakt-poster-layout-enabled
+			.watch-on-stremio-summary-poster-sized
+			.trakt-summary-poster > a {
+			pointer-events: none !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready .trakt-summary-content,
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready [class*="trakt-summary-content"] {
 			grid-column: 1 !important;
 			width: auto !important;
 			min-width: 0 !important;
 		}
 
-		.watch-on-stremio-poster-size-ready .trakt-summary-contextual-content,
-		.watch-on-stremio-poster-size-ready [class*="trakt-summary-contextual-content"] {
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready .trakt-summary-contextual-content,
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready [class*="trakt-summary-contextual-content"] {
 			grid-column: 2 !important;
 			min-width: 0 !important;
 		}
 
-		main.cinetrakt-sticky-poster-detail-page .cinetrakt-sticky-right-section {
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			main.cinetrakt-sticky-poster-detail-page .cinetrakt-sticky-right-section {
 			box-sizing: border-box !important;
 			margin: 0 0 0 -24px !important;
 			width: calc(100% + 24px) !important;
@@ -129,7 +237,8 @@ function injectWatchOnStremioPosterSizeStyles() {
 			min-width: 0 !important;
 		}
 
-		.cinetrakt-sticky-right-footer {
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.cinetrakt-sticky-right-footer {
 			box-sizing: border-box !important;
 			margin-left: var(--watch-on-stremio-sticky-content-left) !important;
 			width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 24px) !important;
@@ -147,17 +256,6 @@ function injectWatchOnStremioPosterSizeStyles() {
 			min-width: 0 !important;
 		}
 
-		@media (max-width: 1000px) {
-			.trakt-summary-container.watch-on-stremio-poster-size-ready,
-			[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready {
-				grid-template-columns: minmax(0, 1fr) !important;
-			}
-
-			.watch-on-stremio-poster-size-ready .trakt-summary-contextual-content,
-			.watch-on-stremio-poster-size-ready [class*="trakt-summary-contextual-content"] {
-				grid-column: 1 !important;
-			}
-		}
 	`;
 	document.head.appendChild(style);
 }
@@ -215,7 +313,7 @@ function attachCinetraktStickyPosterControls(state) {
 	if (attachedControls?.isConnected) {
 		attachedControls.classList.add('cinetrakt-sticky-poster-controls');
 		if (!state.rail.contains(attachedControls)) {
-			state.rail.insertBefore(attachedControls, state.posterContainer);
+			state.rail.appendChild(attachedControls);
 		}
 		return;
 	}
@@ -232,7 +330,30 @@ function attachCinetraktStickyPosterControls(state) {
 		'CineTrakt sticky poster controls position',
 	);
 	controls.classList.add('cinetrakt-sticky-poster-controls');
-	state.rail.insertBefore(controls, state.posterContainer);
+	state.rail.appendChild(controls);
+}
+
+function hasCinetraktVisibleBorderRadius(value) {
+	return String(value || '')
+		.split(/[\s/]+/)
+		.some((token) => Number.parseFloat(token) > 0);
+}
+
+function getCinetraktPosterBorderRadius(sourceImage, posterContainer) {
+	for (let element = sourceImage; element; element = element.parentElement) {
+		const borderRadius = getComputedStyle(element).borderRadius;
+		if (hasCinetraktVisibleBorderRadius(borderRadius)) return borderRadius;
+		if (element === posterContainer) break;
+	}
+	return '8px';
+}
+
+function syncCinetraktPosterBorderRadius(state) {
+	const borderRadius = getCinetraktPosterBorderRadius(
+		state.posterImage,
+		state.posterContainer,
+	);
+	state.posterStage.style.setProperty('--cinetrakt-poster-border-radius', borderRadius);
 }
 
 function markCinetraktResponsiveRightContent(state) {
@@ -276,9 +397,7 @@ function scheduleCinetraktStickyPosterLayoutUpdate(delay = 80) {
 	window.clearTimeout(cinetraktStickyPosterResizeTimer);
 	cinetraktStickyPosterResizeTimer = window.setTimeout(() => {
 		cinetraktStickyPosterResizeTimer = null;
-		if (cinetraktStickyPosterState) {
-			updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
-		}
+		reconcileCinetraktStickyPosterLayout();
 	}, delay);
 }
 
@@ -286,17 +405,53 @@ function applyCinetraktStickyPosterDimensions(state, width, height) {
 	const {
 		summaryContainer,
 		posterContainer,
+		posterStage,
 		mainContent,
 		summaryLeft,
+		posterSideGap,
 	} = state;
-	const contentLeft = summaryLeft + width + 32;
+	const contentLeft = summaryLeft + width + posterSideGap;
 
+	summaryContainer.style.setProperty('--summary-poster-width', `${width}px`, 'important');
 	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${width}px`);
 	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-height', `${height}px`);
+	posterContainer.style.setProperty('--summary-poster-width', `${width}px`, 'important');
 	posterContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${width}px`);
 	posterContainer.style.setProperty('--watch-on-stremio-summary-poster-height', `${height}px`);
+	posterStage.style.setProperty('--watch-on-stremio-summary-poster-width', `${width}px`);
+	posterStage.style.setProperty('--watch-on-stremio-summary-poster-height', `${height}px`);
 	mainContent.style.setProperty('--watch-on-stremio-sticky-content-left', `${contentLeft}px`);
 	state.footer?.style.setProperty('--watch-on-stremio-sticky-content-left', `${contentLeft}px`);
+}
+
+function clearCinetraktStickyPosterDimensions(state) {
+	window.cancelAnimationFrame(state.boundsCorrectionFrame);
+	state.boundsCorrectionFrame = null;
+	state.mainContent.style.removeProperty('--watch-on-stremio-sticky-content-left');
+	state.footer?.style.removeProperty('--watch-on-stremio-sticky-content-left');
+
+	for (const element of [state.summaryContainer, state.posterContainer, state.posterStage]) {
+		for (const property of [
+			'--summary-poster-width',
+			'--watch-on-stremio-summary-poster-width',
+			'--watch-on-stremio-summary-poster-height',
+			'--watch-on-stremio-sticky-poster-left',
+			'--watch-on-stremio-sticky-poster-top',
+		]) {
+			element.style.removeProperty(property);
+		}
+	}
+}
+
+function setCinetraktPosterLayoutMode(state, useStickyLayout) {
+	const compact = !useStickyLayout;
+	document.documentElement.classList.toggle('cinetrakt-poster-layout-compact', compact);
+	state.summaryContainer.classList.toggle('cinetrakt-poster-layout-compact', compact);
+	state.posterStage.style.setProperty(
+		'--cinetrakt-poster-aspect-ratio',
+		String(state.posterAspectRatio),
+	);
+	if (compact) clearCinetraktStickyPosterDimensions(state);
 }
 
 function getCinetraktVisibleViewportBottom() {
@@ -309,6 +464,88 @@ function getCinetraktVisibleViewportBottom() {
 	);
 }
 
+function syncCinetraktPosterDecorationOverflow(state) {
+	const posterRect = state.posterContainer.getBoundingClientRect();
+	let decorationOverflow = 0;
+	state.posterContainer.querySelectorAll('*').forEach((element) => {
+		const rect = element.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		decorationOverflow = Math.max(decorationOverflow, rect.bottom - posterRect.bottom);
+	});
+	state.posterDecorationOverflow = Math.max(0, decorationOverflow);
+	state.posterStage.style.setProperty(
+		'--cinetrakt-poster-decoration-overflow',
+		`${Math.ceil(state.posterDecorationOverflow)}px`,
+	);
+	return state.posterDecorationOverflow;
+}
+
+function getCinetraktViewportWidth() {
+	return getViewportWidth(
+		document.documentElement.clientWidth,
+		window.innerWidth,
+		window.visualViewport?.width,
+	);
+}
+
+function getCinetraktStickyPosterMetrics({
+	summaryContainer,
+	posterImage,
+	posterAspectRatio,
+	posterTop,
+	posterDecorationOverflow = 0,
+	posterFooterHeight = 0,
+	summaryLeftFallback = 0,
+}) {
+	const viewportHeights = [
+		document.documentElement.clientHeight,
+		window.innerHeight,
+		window.visualViewport?.height,
+	].filter((value) => Number.isFinite(value) && value > 0);
+	const viewportHeight = Math.floor(viewportHeights.length
+		? Math.min(...viewportHeights)
+		: window.innerHeight);
+	const naturalImageRatio = posterImage.naturalWidth / posterImage.naturalHeight;
+	const imageRatio = Number.isFinite(posterAspectRatio) && posterAspectRatio > 0
+		? posterAspectRatio
+		: naturalImageRatio;
+	const sidebarRect = document.querySelector('.trakt-side-navbar')?.getBoundingClientRect();
+	const soundtrackCardRect = document.querySelector(
+		'.cinetrakt-soundtrack-card:not([hidden])',
+	)?.getBoundingClientRect();
+	const sidebarVisualRight = soundtrackCardRect?.width > 0
+		? soundtrackCardRect.right
+		: sidebarRect?.right;
+	const summaryLeft = Number.isFinite(sidebarVisualRight) && sidebarVisualRight > 0
+		? Math.max(0, Math.round(sidebarVisualRight + CINETRAKT_POSTER_SIDE_GAP))
+		: summaryLeftFallback;
+	const resolvedPosterTop = Math.max(0, posterTop);
+	const posterBottomSafety = CINETRAKT_POSTER_BOTTOM_SAFETY;
+	const availableHeight = Math.max(
+		1,
+		viewportHeight
+			- resolvedPosterTop
+			- posterBottomSafety
+			- posterDecorationOverflow
+			- posterFooterHeight,
+	);
+	const height = Math.floor(availableHeight);
+	const width = Math.max(1, Math.floor(height * imageRatio));
+	const contentLeft = summaryLeft + width + CINETRAKT_POSTER_SIDE_GAP;
+
+	return {
+		contentLeft,
+		height,
+		imageRatio,
+		posterBottomSafety,
+		posterSideGap: CINETRAKT_POSTER_SIDE_GAP,
+		posterTop: resolvedPosterTop,
+		summaryLeft,
+		viewportWidth: getCinetraktViewportWidth(),
+		width,
+	};
+}
+
 function scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, bottomSafety) {
 	window.cancelAnimationFrame(state.boundsCorrectionFrame);
 	state.boundsCorrectionFrame = window.requestAnimationFrame(() => {
@@ -316,14 +553,7 @@ function scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, bottom
 		if (state !== cinetraktStickyPosterState || !state.posterContainer.isConnected) return;
 
 		const posterRect = state.posterContainer.getBoundingClientRect();
-		let decorationOverflow = 0;
-		state.posterContainer.querySelectorAll('*')
-			.forEach((element) => {
-				const rect = element.getBoundingClientRect();
-				if (rect.width <= 0 || rect.height <= 0) return;
-				decorationOverflow = Math.max(decorationOverflow, rect.bottom - posterRect.bottom);
-			});
-		state.posterDecorationOverflow = Math.max(0, decorationOverflow);
+		syncCinetraktPosterDecorationOverflow(state);
 		const targetPosterBottom = getCinetraktVisibleViewportBottom()
 			- bottomSafety
 			- state.posterDecorationOverflow;
@@ -336,61 +566,87 @@ function scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, bottom
 }
 
 function updateCinetraktStickyPosterLayout(state) {
-	const { summaryContainer, posterContainer, posterImage, rail, mainContent } = state;
-	if (!summaryContainer.isConnected || !posterContainer.isConnected || !rail.isConnected) return;
+	const { summaryContainer, posterContainer, posterStage, rail } = state;
+	if (!summaryContainer.isConnected
+		|| !posterContainer.isConnected
+		|| !posterStage.isConnected
+		|| !rail.isConnected) return;
 
 	attachCinetraktStickyPosterControls(state);
 	markCinetraktResponsiveRightContent(state);
-	if (!posterImage.complete || !posterImage.naturalWidth || !posterImage.naturalHeight) {
-		const pendingSource = posterImage.currentSrc || posterImage.src || window.location.pathname;
-		if (posterImage.dataset.watchOnStremioPosterLoadSource !== pendingSource) {
+	const livePosterImage = state.posterContainer.querySelector('img');
+	if (livePosterImage) {
+		state.posterImage = livePosterImage;
+	}
+	syncCinetraktPosterBorderRadius(state);
+	syncCinetraktPosterDecorationOverflow(state);
+	const posterImage = state.posterImage;
+	if (!posterImage?.complete || !posterImage.naturalWidth || !posterImage.naturalHeight) {
+		const pendingSource = posterImage?.currentSrc || posterImage?.src || window.location.pathname;
+		if (posterImage && posterImage.dataset.watchOnStremioPosterLoadSource !== pendingSource) {
 			posterImage.dataset.watchOnStremioPosterLoadSource = pendingSource;
 			posterImage.addEventListener('load', () => scheduleCinetraktStickyPosterLayoutUpdate(0), { once: true });
 		}
 		return;
 	}
 
-	const viewportHeights = [
-		document.documentElement.clientHeight,
-		window.innerHeight,
-		window.visualViewport?.height,
-	].filter((value) => Number.isFinite(value) && value > 0);
-	const viewportHeight = Math.floor(viewportHeights.length
-		? Math.min(...viewportHeights)
-		: window.innerHeight);
-	const imageRatio = posterImage.naturalWidth / posterImage.naturalHeight;
-	const summaryRect = summaryContainer.getBoundingClientRect();
-	const sidebarRect = document.querySelector('.trakt-side-navbar')?.getBoundingClientRect();
-	const configuredSideGap = Number.parseFloat(
-		getComputedStyle(document.documentElement).getPropertyValue('--layout-distance-side'),
-	);
-	const sidebarGap = Number.isFinite(configuredSideGap) ? configuredSideGap : 24;
-	const summaryLeft = sidebarRect?.width > 0
-		? Math.max(0, Math.round(sidebarRect.right + sidebarGap))
-		: state.summaryLeft;
-	if (window.scrollY < 2) state.posterTop = Math.max(0, summaryRect.top + 38);
-	state.summaryLeft = summaryLeft;
-	const posterTop = state.posterTop;
 	const controlsHeight = state.controlsEntry?.element?.getBoundingClientRect().height || 0;
 	const controlsGap = controlsHeight > 0 ? 8 : 0;
-	const railTop = Math.max(8, posterTop - controlsHeight - controlsGap);
-	const posterBottomSafety = 24;
-	const availableHeight = Math.max(
-		1,
-		viewportHeight - posterTop - posterBottomSafety - state.posterDecorationOverflow,
-	);
-	const finalHeight = Math.floor(availableHeight);
-	const finalWidth = Math.max(1, Math.floor(finalHeight * imageRatio));
+	const metrics = getCinetraktStickyPosterMetrics({
+		summaryContainer,
+		posterImage,
+		posterAspectRatio: state.posterAspectRatio,
+		posterTop: state.posterTop,
+		posterDecorationOverflow: state.posterDecorationOverflow,
+		posterFooterHeight: controlsHeight + controlsGap,
+		summaryLeftFallback: state.summaryLeft,
+	});
+	const useStickyLayout = canUseStickyLayout(metrics.viewportWidth, metrics.contentLeft);
+	setCinetraktPosterLayoutMode(state, useStickyLayout);
+	if (!useStickyLayout) return;
 
-	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-left', `${summaryLeft}px`);
+	state.summaryLeft = metrics.summaryLeft;
+	state.posterTop = metrics.posterTop;
+	state.posterSideGap = metrics.posterSideGap;
+	const railTop = Math.max(8, metrics.posterTop);
+
+	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-left', `${metrics.summaryLeft}px`);
 	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-top', `${railTop}px`);
-	applyCinetraktStickyPosterDimensions(state, finalWidth, finalHeight);
-	scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, posterBottomSafety);
+	applyCinetraktStickyPosterDimensions(state, metrics.width, metrics.height);
+	scheduleCinetraktStickyPosterBoundsCorrection(
+		state,
+		metrics.imageRatio,
+		metrics.posterBottomSafety + controlsHeight + controlsGap,
+	);
+}
+
+function isCinetraktPosterDetailRoute() {
+	return window.location.hostname === 'app.trakt.tv'
+		&& /^\/(shows|movies)\/[^/]+\/?$/.test(window.location.pathname);
+}
+
+function reconcileCinetraktStickyPosterLayout() {
+	if (!cinetraktPosterLayoutRequested
+		|| !isCinetraktPosterDetailRoute()) {
+		cleanupWatchOnStremioPosterSize();
+		return;
+	}
+
+	setupWatchOnStremioPosterSize();
+}
+
+function getCinetraktSummaryPosterContainer(summaryContainer) {
+	if (!summaryContainer) return null;
+
+	return summaryContainer.querySelector(':scope > .trakt-summary-poster-container')
+		|| [...summaryContainer.children].find((child) => (
+			[...child.classList].some((className) => className.includes('trakt-summary-poster-container'))
+		))
+		|| null;
 }
 
 function setupWatchOnStremioPosterSize() {
-	if (window.location.hostname !== 'app.trakt.tv') return;
-	if (!/^\/(shows|movies)\/[^/]+\/?$/.test(window.location.pathname)) return;
+	if (!isCinetraktPosterDetailRoute()) return;
 	const routeKey = window.location.pathname;
 
 	if (cinetraktStickyPosterState
@@ -406,31 +662,48 @@ function setupWatchOnStremioPosterSize() {
 
 	const summaryContainer = document.querySelector('.trakt-summary-container')
 		|| document.querySelector('[class*="trakt-summary-container"]');
-	const posterContainer = summaryContainer?.querySelector('.trakt-summary-poster-container')
-		|| summaryContainer?.querySelector('[class*="trakt-summary-poster-container"]');
+	const posterContainer = getCinetraktSummaryPosterContainer(summaryContainer);
 	const posterImage = posterContainer?.querySelector('img');
 	const mainContent = summaryContainer?.closest('main.trakt-content, main');
 
 	if (!summaryContainer || !posterContainer || !posterImage || !mainContent) return;
-
-	injectWatchOnStremioPosterSizeStyles();
-
-	// Nettoyage des essais précédents, au cas où une ancienne version a laissé des classes/styles.
-	summaryContainer.classList.remove('watch-on-stremio-summary-layout-ready', 'watch-on-stremio-large-poster-page');
-	posterContainer.classList.remove('watch-on-stremio-poster-size-target', 'watch-on-stremio-poster-tilt-card');
-	for (const property of ['transform', 'filter', 'box-shadow', 'transition', 'will-change', 'perspective', 'transform-origin', 'z-index']) {
-		posterContainer.style.removeProperty(property);
+	if (posterContainer.parentElement !== summaryContainer) return;
+	if (!findCinetraktStickyPosterControls(summaryContainer)) return;
+	if (!posterImage.complete || !posterImage.naturalWidth || !posterImage.naturalHeight) {
+		const pendingSource = posterImage.currentSrc || posterImage.src || routeKey;
+		if (posterImage.dataset.watchOnStremioPosterLoadSource !== pendingSource) {
+			posterImage.dataset.watchOnStremioPosterLoadSource = pendingSource;
+			posterImage.addEventListener('load', () => scheduleCinetraktStickyPosterLayoutUpdate(0), { once: true });
+		}
+		return;
 	}
 
 	const originalPosterRect = posterContainer.getBoundingClientRect();
+	const originalPosterImageRect = posterImage.getBoundingClientRect();
+	const posterAspectRatio = originalPosterImageRect.width > 0 && originalPosterImageRect.height > 0
+		? originalPosterImageRect.width / originalPosterImageRect.height
+		: posterImage.naturalWidth / posterImage.naturalHeight;
+	const metrics = getCinetraktStickyPosterMetrics({
+		summaryContainer,
+		posterImage,
+		posterAspectRatio,
+		posterTop: Math.max(8, originalPosterRect.top - CINETRAKT_POSTER_TOP_REDUCTION),
+		summaryLeftFallback: Math.max(0, originalPosterRect.left),
+	});
+	document.documentElement.classList.add('cinetrakt-poster-layout-enabled');
+	injectWatchOnStremioPosterSizeStyles();
+
 	const posterEntry = moveCinetraktElementWithPlaceholder(
 		posterContainer,
 		'CineTrakt sticky poster position',
 	);
 	const rail = document.createElement('div');
 	rail.id = CINETRAKT_STICKY_POSTER_RAIL_ID;
+	const posterStage = document.createElement('div');
+	posterStage.className = 'cinetrakt-sticky-poster-stage';
+	posterStage.appendChild(posterContainer);
 	summaryContainer.prepend(rail);
-	rail.appendChild(posterContainer);
+	rail.appendChild(posterStage);
 	summaryContainer.classList.add('watch-on-stremio-poster-size-ready');
 	posterContainer.classList.add('watch-on-stremio-summary-poster-sized');
 	mainContent.classList.add('cinetrakt-sticky-poster-detail-page');
@@ -439,6 +712,7 @@ function setupWatchOnStremioPosterSize() {
 		routeKey,
 		summaryContainer,
 		posterContainer,
+		posterStage,
 		posterImage,
 		posterEntry,
 		controlsEntry: null,
@@ -448,22 +722,30 @@ function setupWatchOnStremioPosterSize() {
 		footer: null,
 		boundsCorrectionFrame: null,
 		posterDecorationOverflow: 0,
-		summaryLeft: Math.max(0, originalPosterRect.left),
-		posterTop: Math.max(0, originalPosterRect.top),
+		summaryLeft: metrics.summaryLeft,
+		posterTop: metrics.posterTop,
+		posterSideGap: metrics.posterSideGap,
+		posterAspectRatio,
 	};
+	syncCinetraktPosterBorderRadius(cinetraktStickyPosterState);
+	globalThis.CineTraktTraktStremioUi?.refreshDetailPosterTarget?.();
 	updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
 }
 
 function cleanupWatchOnStremioPosterSize() {
 	window.clearTimeout(cinetraktStickyPosterResizeTimer);
 	cinetraktStickyPosterResizeTimer = null;
-	document.documentElement.classList.remove('cinetrakt-poster-layout-enabled');
+	document.documentElement.classList.remove(
+		'cinetrakt-poster-layout-enabled',
+		'cinetrakt-poster-layout-compact',
+	);
 	const state = cinetraktStickyPosterState;
 	window.cancelAnimationFrame(state?.boundsCorrectionFrame);
 	const summaryContainer = state?.summaryContainer
 		|| document.querySelector('.watch-on-stremio-poster-size-ready');
 	const posterContainer = state?.posterContainer
 		|| document.querySelector('.watch-on-stremio-summary-poster-sized');
+	const posterStage = state?.posterStage;
 
 	state?.controlsEntry?.element?.classList.remove('cinetrakt-sticky-poster-controls');
 	restoreCinetraktMovedElement(state?.controlsEntry);
@@ -476,15 +758,20 @@ function cleanupWatchOnStremioPosterSize() {
 	});
 	state?.footer?.classList.remove('cinetrakt-sticky-right-footer');
 	state?.footer?.style.removeProperty('--watch-on-stremio-sticky-content-left');
-	summaryContainer?.classList.remove('watch-on-stremio-poster-size-ready');
+	summaryContainer?.classList.remove(
+		'watch-on-stremio-poster-size-ready',
+		'cinetrakt-poster-layout-compact',
+	);
 	posterContainer?.classList.remove('watch-on-stremio-summary-poster-sized');
-	for (const element of [summaryContainer, posterContainer]) {
+	for (const element of [summaryContainer, posterContainer, posterStage]) {
 		if (!element) continue;
 		for (const property of [
+			'--summary-poster-width',
 			'--watch-on-stremio-summary-poster-width',
 			'--watch-on-stremio-summary-poster-height',
 			'--watch-on-stremio-sticky-poster-left',
 			'--watch-on-stremio-sticky-poster-top',
+			'--cinetrakt-poster-decoration-overflow',
 		]) {
 			element.style.removeProperty(property);
 		}
@@ -493,9 +780,8 @@ function cleanupWatchOnStremioPosterSize() {
 }
 	const api = Object.freeze({
 		setEnabled(enabled) {
-			document.documentElement.classList.toggle('cinetrakt-poster-layout-enabled', enabled);
-			if (enabled) setupWatchOnStremioPosterSize();
-			else cleanupWatchOnStremioPosterSize();
+			cinetraktPosterLayoutRequested = Boolean(enabled);
+			reconcileCinetraktStickyPosterLayout();
 		},
 		schedule: scheduleCinetraktStickyPosterLayoutUpdate,
 		cleanup: cleanupWatchOnStremioPosterSize,

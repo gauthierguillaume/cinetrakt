@@ -9,6 +9,8 @@
 		getTraktMediaType,
 	} = globalThis.CineTraktStremioUrls;
 	const { openFromMouseEvent: openStremioFromMouseEvent } = globalThis.CineTraktStremioOpen;
+	const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
+	let currentDetailPosterStremioUrl = '';
 
 	function isFeatureEnabled() {
 		return globalThis.CineTraktSettings?.isEnabled('traktStremioLinks') !== false;
@@ -29,6 +31,55 @@ function getImdbIdFromPage() {
 	return "";
 }
 
+function isCinetraktNativePosterStatusTarget(element, target) {
+	for (let current = target; current && current !== element; current = current.parentElement) {
+		const label = String(current.textContent || '').replace(/\s+/g, ' ').trim();
+		if (/^(?:watched|watchlisted|wishlisted|started|collected|completed|unwatched)$/i.test(label)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function getCinetraktPosterInteractionImage(element) {
+	if (element.matches?.('img')) return element;
+	return element.querySelector?.('img') || null;
+}
+
+function isCinetraktPointerOutsidePosterImage(element, event) {
+	if (!(event instanceof MouseEvent)) return false;
+
+	const image = getCinetraktPosterInteractionImage(element);
+	if (!image) return false;
+
+	const rect = image.getBoundingClientRect();
+	if (rect.width <= 0 || rect.height <= 0) return false;
+
+	return event.clientX < rect.left
+		|| event.clientX > rect.right
+		|| event.clientY < rect.top
+		|| event.clientY > rect.bottom;
+}
+
+function shouldPreserveNativePosterInteraction(element, event) {
+	const target = event.target instanceof Element ? event.target : null;
+	if (!target || !element.contains(target)) return false;
+
+	const nativeInteractive = target.closest(
+		'a[href], button, input, select, textarea, [role="button"], [role="link"]',
+	);
+	if (
+		nativeInteractive
+		&& nativeInteractive !== element
+		&& element.contains(nativeInteractive)
+	) {
+		return true;
+	}
+
+	if (isCinetraktNativePosterStatusTarget(element, target)) return true;
+	return isCinetraktPointerOutsidePosterImage(element, event);
+}
+
 function bindCinetraktStremioOpenHandlers(element, getStremioUrl) {
 	if (!element || typeof getStremioUrl !== "function") return;
 	if (element.dataset.cinetraktStremioBound === "1") return;
@@ -38,7 +89,11 @@ function bindCinetraktStremioOpenHandlers(element, getStremioUrl) {
 	element.addEventListener(
 		"click",
 		function (event) {
+			if (element.dataset.cinetraktStremioActive !== 'true') return;
 			if (!isFeatureEnabled()) return;
+			if (shouldPreserveNativePosterInteraction(element, event)) return;
+			if (event.cinetraktStremioHandled) return;
+			event.cinetraktStremioHandled = true;
 			openStremioFromMouseEvent(getStremioUrl(), event);
 		},
 		true,
@@ -47,21 +102,150 @@ function bindCinetraktStremioOpenHandlers(element, getStremioUrl) {
 	element.addEventListener(
 		"contextmenu",
 		function (event) {
+			if (element.dataset.cinetraktStremioActive !== 'true') return;
 			if (!isFeatureEnabled()) return;
+			if (shouldPreserveNativePosterInteraction(element, event)) return;
+			if (event.cinetraktStremioHandled) return;
+			event.cinetraktStremioHandled = true;
+			openStremioFromMouseEvent(getStremioUrl(), event);
+		},
+		true,
+	);
+
+	element.addEventListener(
+		"keydown",
+		function (event) {
+			if (element.dataset.cinetraktStremioActive !== 'true') return;
+			if (!isFeatureEnabled()) return;
+			if (event.key !== 'Enter' && event.key !== ' ') return;
+			if (shouldPreserveNativePosterInteraction(element, event)) return;
+			if (event.cinetraktStremioHandled) return;
+			event.cinetraktStremioHandled = true;
 			openStremioFromMouseEvent(getStremioUrl(), event);
 		},
 		true,
 	);
 }
 
-/*
-	TRAKT V3
-	Version propre :
-	- ne modifie PAS le hover
-	- ne modifie PAS l'overlay
-	- ne modifie PAS Where to Watch
-	- change seulement le clic sur la jaquette pour ouvrir Stremio
-*/
+function getCinetraktDetailPosterTargets() {
+	const stickyPosterStage = document.querySelector('.cinetrakt-sticky-poster-stage');
+	if (stickyPosterStage) return [stickyPosterStage];
+
+	const posterSurface = document.querySelector('.trakt-summary-poster');
+	const nativePosterTarget = posterSurface?.querySelector(':scope > a, a:has(> img)')
+		|| posterSurface?.querySelector('a')
+		|| posterSurface;
+	return nativePosterTarget ? [nativePosterTarget] : [];
+}
+
+function bindCinetraktDetailPosterTargets(stremioUrl) {
+	if (!stremioUrl) return;
+	currentDetailPosterStremioUrl = stremioUrl;
+	const targets = getCinetraktDetailPosterTargets();
+
+	document.querySelectorAll('[data-watch-on-stremio-click-fixed="true"]').forEach((target) => {
+		target.dataset.cinetraktStremioActive = 'false';
+		target.removeAttribute('data-cinetrakt-stremio-target');
+		if (target.classList.contains('cinetrakt-sticky-poster-stage')) {
+			target.removeAttribute('role');
+			target.removeAttribute('aria-label');
+			target.removeAttribute('tabindex');
+		}
+	});
+
+	targets.forEach((target) => {
+		target.dataset.watchOnStremioClickFixed = 'true';
+		target.dataset.cinetraktStremioActive = 'true';
+		target.dataset.stremioUrl = stremioUrl;
+		target.style.cursor = 'pointer';
+		if (target.classList.contains('cinetrakt-sticky-poster-stage')) {
+			target.dataset.cinetraktStremioTarget = 'true';
+			target.setAttribute('role', 'link');
+			target.setAttribute('aria-label', 'Open this title in Stremio');
+			target.tabIndex = 0;
+		}
+		bindCinetraktStremioOpenHandlers(
+			target,
+			() => currentDetailPosterStremioUrl || target.dataset.stremioUrl,
+		);
+	});
+}
+
+function refreshCinetraktDetailPosterTarget() {
+	if (currentDetailPosterStremioUrl) {
+		bindCinetraktDetailPosterTargets(currentDetailPosterStremioUrl);
+	}
+}
+
+	function requestTraktImdbId(pathname) {
+		return new Promise((resolve) => {
+			try {
+				const runtime = globalThis.chrome?.runtime;
+			if (!runtime?.id || typeof runtime.sendMessage !== 'function') {
+				resolve('');
+				return;
+			}
+
+			runtime.sendMessage({
+				type: MESSAGE_TYPES.RESOLVE_TRAKT_IMDB_ID,
+				pathname,
+			}, (response) => {
+				try {
+					if (runtime.lastError) {
+						resolve('');
+						return;
+					}
+					const imdbId = String(response?.imdbId || '').toLowerCase();
+					resolve(/^tt\d{7,}$/.test(imdbId) ? imdbId : '');
+				} catch {
+					resolve('');
+				}
+			});
+		} catch {
+			resolve('');
+		}
+	});
+}
+
+function getDetailMediaFromTraktUrl(url) {
+	try {
+		const parsed = new URL(url, window.location.origin);
+		const match = parsed.pathname.match(/^\/(movies|shows)\/([^/?#]+)\/?$/i);
+		if (!match) return null;
+		return {
+			kind: match[1].toLowerCase(),
+			slug: match[2].toLowerCase(),
+			pathname: `/${match[1].toLowerCase()}/${match[2].toLowerCase()}`,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function getImdbIdFromTraktMediaUrl(mediaUrl) {
+	const media = getDetailMediaFromTraktUrl(mediaUrl);
+	if (!media) return Promise.resolve('');
+
+	const immediateImdbId = media.pathname === window.location.pathname
+		? getImdbIdFromPage()
+		: '';
+	if (immediateImdbId) return Promise.resolve(immediateImdbId);
+
+	const cacheKey = media.kind === 'shows' ? media.slug : `movie:${media.slug}`;
+	return globalThis.CineTraktImdbCache.resolve(
+		cacheKey,
+		() => requestTraktImdbId(media.pathname),
+	);
+}
+
+function applyDetailStremioLinks(imdbId, type) {
+	if (!imdbId) return;
+	updatePosterLinkToStremio(buildStremioDetailUrl(type, imdbId));
+	if (type === 'series') insertEpisodeStremioButtonsTraktV3(imdbId);
+}
+
+/* La jaquette conserve le visuel CineTrakt sans l'overlay promotionnel Trakt.
+   Son clic ouvre directement le média dans Stremio. */
 function insertStremioButtonTraktV3() {
 	if (window.location.hostname !== "app.trakt.tv") return;
 
@@ -82,17 +266,17 @@ function insertStremioButtonTraktV3() {
 		return;
 	}
 
-	const imdbId = getImdbIdFromPage();
-
-	if (imdbId) {
-		const type = getTraktMediaType(window.location.href);
-		const stremioUrl = buildStremioDetailUrl(type, imdbId);
-
-		updatePosterLinkToStremio(stremioUrl);
-
-		if (type === "series") {
-			insertEpisodeStremioButtonsTraktV3(imdbId);
-		}
+	const detailPathname = window.location.pathname;
+	const type = getTraktMediaType(window.location.href);
+	if (type === 'series') markSeasonEpisodeTextTargetsPreparing();
+	const immediateImdbId = getImdbIdFromPage();
+	if (immediateImdbId) {
+		applyDetailStremioLinks(immediateImdbId, type);
+	} else {
+		getImdbIdFromTraktMediaUrl(window.location.href).then((imdbId) => {
+			if (window.location.pathname !== detailPathname) return;
+			applyDetailStremioLinks(imdbId, type);
+		});
 	}
 
 	insertContinueWatchingStremioButtonsTraktV3();
@@ -102,20 +286,11 @@ function updateEpisodePosterLinkToStremio(stremioUrl) {
 	// Page détail d'un épisode : clic sur la vignette principale => épisode exact dans Stremio.
 	if (!stremioUrl || window.location.hostname !== "app.trakt.tv") return;
 
-	const isEpisodeDetailPage = /^\/shows\/[^/]+\/seasons\/\d+\/episodes\/\d+\/?$/.test(window.location.pathname);
+	const isEpisodeDetailPage = Boolean(getEpisodeDataFromTraktUrl(window.location.href));
 
 	if (!isEpisodeDetailPage) return;
 
-	const posterTarget = document.querySelector(".trakt-summary-poster a") || document.querySelector(".trakt-summary-poster") || document.querySelector("[class*='summary-poster'] a") || document.querySelector("[class*='summary-poster']");
-
-	if (!posterTarget) return;
-
-	posterTarget.dataset.watchOnStremioClickFixed = "true";
-	posterTarget.dataset.stremioUrl = stremioUrl;
-	posterTarget.style.cursor = "pointer";
-
-	posterTarget.dataset.watchOnStremioEpisodePosterHandlerReady = "true";
-	bindCinetraktStremioOpenHandlers(posterTarget, () => posterTarget.dataset.stremioUrl || stremioUrl);
+	bindCinetraktDetailPosterTargets(stremioUrl);
 }
 
 function updatePosterLinkToStremio(stremioUrl) {
@@ -127,15 +302,7 @@ function updatePosterLinkToStremio(stremioUrl) {
 
 	if (!isDetailPage) return;
 
-	const posterLink = document.querySelector(".trakt-summary-poster a");
-
-	if (!posterLink) return;
-
-	posterLink.dataset.watchOnStremioClickFixed = "true";
-	posterLink.dataset.stremioUrl = stremioUrl;
-
-	posterLink.dataset.watchOnStremioPosterHandlerReady = "true";
-	bindCinetraktStremioOpenHandlers(posterLink, () => posterLink.dataset.stremioUrl || stremioUrl);
+	bindCinetraktDetailPosterTargets(stremioUrl);
 }
 
 function getActionButtonFromCard(card) {
@@ -213,6 +380,18 @@ function injectWatchOnStremioEpisodeLinkStyles() {
 			text-decoration-line: none !important;
 			text-decoration-color: transparent !important;
 		}
+
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:hover .trakt-card-title,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:hover .trakt-card-subtitle,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:hover trakt-spoiler,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:focus-visible .trakt-card-title,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:focus-visible .trakt-card-subtitle,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:focus-visible trakt-spoiler,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} .trakt-card-title,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} .trakt-card-subtitle,
+		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} trakt-spoiler {
+			color: #a855f7 !important;
+		}
 	`;
 	document.documentElement.appendChild(style);
 }
@@ -265,7 +444,7 @@ function setupWatchOnStremioEpisodeLinkClickHandler() {
 	document.addEventListener("click", (event) => {
 		if (!isFeatureEnabled()) return;
 		const link = event.target.closest(`.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}`);
-		if (!link) return;
+		if (!link?.dataset.stremioUrl) return;
 
 		event.preventDefault();
 		event.stopPropagation();
@@ -306,7 +485,7 @@ function findNearestEpisodeContext(element) {
 		const text = current.textContent || "";
 		const rect = current.getBoundingClientRect();
 		const hasEpisodeText = /S\s*\d+\s*[•·.-]\s*E\s*\d+/i.test(text);
-		const hasEpisodeLink = !!current.querySelector('a[href*="/shows/"][href*="/seasons/"][href*="/episodes/"]');
+		const hasEpisodeLink = Boolean(findEpisodeLinkData(current));
 		const hasImage = !!current.querySelector("img");
 
 		if ((hasEpisodeText || hasEpisodeLink) && (hasImage || rect.height <= 140) && rect.width >= 40 && rect.width <= 1100 && rect.height >= 12 && rect.height <= 430) {
@@ -333,6 +512,23 @@ function getInnermostEpisodeSpoilerTextElement(spoiler) {
 
 function getSeasonEpisodeClickableTargets(element, context = null) {
 	if (!element) return [];
+	const footerInformation = element.closest('.trakt-card-footer-information');
+	if (footerInformation) {
+		const title = footerInformation.querySelector(':scope > .trakt-card-title');
+		const subtitle = footerInformation.querySelector(':scope > .trakt-card-subtitle');
+		const episodePattern = /S\s*\d+\s*[•·.-]\s*E\s*\d+/i;
+		const spoilerSelector = 'trakt-spoiler, [data-spoiler], [class*="spoiler"], [style*="blur"]';
+		const episodeTarget = [title, subtitle].find((candidate) => (
+			candidate && episodePattern.test(candidate.textContent || '')
+		));
+
+		if (episodeTarget) {
+			const targets = [episodeTarget];
+			const companion = episodeTarget === title ? subtitle : title;
+			if (companion?.querySelector(spoilerSelector)) targets.push(companion);
+			return targets;
+		}
+	}
 
 	const episodePattern = /S\s*\d+\s*[•·.-]\s*E\s*\d+/i;
 	const episodeRect = element.getBoundingClientRect();
@@ -454,160 +650,136 @@ function getShowSlugFromTraktUrl(url) {
 	return match ? match[1] : "";
 }
 
+function getCanonicalTraktShowUrl(url) {
+	const showSlug = getShowSlugFromTraktUrl(url);
+	return showSlug ? new URL(`/shows/${showSlug}`, window.location.origin).href : "";
+}
+
+function getEpisodeLinkData(link) {
+	if (!link?.matches?.('a[href*="/shows/"]')) return null;
+	const episodeData = getEpisodeDataFromTraktUrl(link.href || link.getAttribute('href'));
+	return episodeData ? { link, episodeData } : null;
+}
+
+function findEpisodeLinkData(root) {
+	if (!root) return null;
+	const candidates = [];
+	if (root.matches?.('a[href*="/shows/"]')) candidates.push(root);
+	if (typeof root.querySelectorAll === 'function') {
+		candidates.push(...root.querySelectorAll('a[href*="/shows/"]'));
+	}
+
+	for (const link of candidates) {
+		const match = getEpisodeLinkData(link);
+		if (match) return match;
+	}
+
+	return null;
+}
+
 function getBestShowLinkFromCard(card) {
 	if (!card) return "";
 
-	const episodeLink = card.querySelector('a[href*="/shows/"][href*="/seasons/"][href*="/episodes/"]');
-
-	if (episodeLink) return episodeLink.href;
+	const episodeLinkData = findEpisodeLinkData(card);
+	if (episodeLinkData) return episodeLinkData.episodeData.showUrl;
 
 	const showLink = card.querySelector('a[href*="/shows/"]');
-
-	if (showLink) return showLink.href;
+	const canonicalShowUrl = getCanonicalTraktShowUrl(showLink?.href);
+	if (canonicalShowUrl) return canonicalShowUrl;
 
 	const htmlMatch = card.innerHTML.match(/\/shows\/[^"' ]+/);
 
 	if (htmlMatch) {
-		return new URL(htmlMatch[0], window.location.origin).href;
+		return getCanonicalTraktShowUrl(new URL(htmlMatch[0], window.location.origin).href);
 	}
 
 	return "";
 }
 
-function findImdbIdInHtml(html, showSlug) {
-	if (!html) return "";
+function markSeasonEpisodeTargetsPreparing(elements, episodeData = null) {
+	const targets = (Array.isArray(elements) ? elements : [elements])
+		.filter((element) => element instanceof Element);
+	if (!targets.length) return;
 
-	const imdbFromExternalLink = html.match(/id=["']external-link-imdb["'][^>]+href=["'][^"']*(tt\d{7,})/i) || html.match(/href=["'][^"']*imdb\.com\/title\/(tt\d{7,})/i);
-
-	if (imdbFromExternalLink) return imdbFromExternalLink[1];
-
-	if (!showSlug) return "";
-
-	const slugIndex = html.indexOf(showSlug);
-
-	if (slugIndex === -1) return "";
-
-	const start = Math.max(0, slugIndex - 30000);
-	const end = Math.min(html.length, slugIndex + 30000);
-	const aroundSlug = html.slice(start, end);
-
-	return aroundSlug.match(/imdb\.com\/title\/(tt\d{7,})/i)?.[1] || aroundSlug.match(/"imdb"\s*:\s*"(tt\d{7,})"/i)?.[1] || aroundSlug.match(/\btt\d{7,}\b/i)?.[0] || "";
-}
-
-function getImdbIdFromDocument(doc, showSlug) {
-	if (!doc) return "";
-
-	const imdbLink = doc.querySelector('#external-link-imdb[href*="tt"], a[href*="imdb.com/title/tt"]');
-	const imdbHref = imdbLink ? imdbLink.href : "";
-	const imdbFromLink = imdbHref.match(/tt\d{7,}/i);
-
-	if (imdbFromLink) return imdbFromLink[0];
-
-	return findImdbIdInHtml(doc.documentElement ? doc.documentElement.innerHTML : "", showSlug);
-}
-
-function getImdbIdFromHiddenTraktIframe(showSlug) {
-	if (!showSlug) return Promise.resolve("");
-
-	return new Promise((resolve) => {
-		const iframe = document.createElement("iframe");
-		let resolved = false;
-		let tries = 0;
-		let checkTimer = null;
-		const maxTries = 40;
-
-		function cleanIframe() {
-			setTimeout(() => {
-				if (iframe && iframe.parentElement) {
-					iframe.parentElement.removeChild(iframe);
-				}
-			}, 300);
+	injectWatchOnStremioEpisodeLinkStyles();
+	setupWatchOnStremioEpisodeLinkClickHandler();
+	const existingGroupId = targets
+		.map((element) => element.dataset.watchOnStremioEpisodeGroup)
+		.find(Boolean);
+	const groupId = existingGroupId || `cinetrakt-episode-${++watchOnStremioEpisodeLinkGroupSequence}`;
+	targets.forEach((element) => {
+		element.classList.add(WATCH_ON_STREMIO_EPISODE_LINK_CLASS);
+		element.dataset.watchOnStremioEpisodeGroup = groupId;
+		if (episodeData) {
+			element.dataset.watchOnStremioSeason = String(episodeData.season);
+			element.dataset.watchOnStremioEpisode = String(episodeData.episode);
 		}
-
-		function finish(imdbId) {
-			if (resolved) return;
-
-			resolved = true;
-			window.clearTimeout(checkTimer);
-
-			cleanIframe();
-			resolve(imdbId || "");
-		}
-
-		function scheduleCheck(delay) {
-			if (resolved) return;
-			window.clearTimeout(checkTimer);
-			checkTimer = window.setTimeout(checkIframe, delay);
-		}
-
-		function checkIframe() {
-			if (resolved) return;
-
-			tries++;
-
-			try {
-				const doc = iframe.contentDocument || iframe.contentWindow?.document;
-				const imdbId = getImdbIdFromDocument(doc, showSlug);
-
-				if (imdbId) {
-					finish(imdbId);
-					return;
-				}
-			} catch {
-				// Cross-origin or incomplete frames are retried until the finite deadline.
-			}
-
-			if (tries >= maxTries) {
-				finish("");
-				return;
-			}
-
-			scheduleCheck(250);
-		}
-
-		iframe.src = `${window.location.origin}/shows/${showSlug}?ignore_watchlisted=false&mode=media`;
-		iframe.style.position = "fixed";
-		iframe.style.left = "-9999px";
-		iframe.style.top = "-9999px";
-		iframe.style.width = "1px";
-		iframe.style.height = "1px";
-		iframe.style.opacity = "0";
-		iframe.style.pointerEvents = "none";
-		iframe.style.border = "0";
-		iframe.className = "cinetrakt-imdb-resolver-frame";
-		iframe.setAttribute("aria-hidden", "true");
-
-		iframe.addEventListener("load", function () {
-			scheduleCheck(250);
-		});
-
-		document.body.appendChild(iframe);
-		scheduleCheck(500);
 	});
 }
 
-async function getImdbIdFromTraktShowUrl(showUrl) {
+function markSeasonEpisodeTextTargetsPreparing() {
+	getSeasonEpisodeTextTargets().forEach(({ element, text }) => {
+		const episodeData = getSeasonEpisodeFromText(text);
+		if (!episodeData) return;
+		markSeasonEpisodeTargetsPreparing(
+			getSeasonEpisodeClickableTargets(element, findNearestEpisodeContext(element)),
+			episodeData,
+		);
+	});
+}
+
+function getTraktShowIdFromCard(card) {
+	if (!card) return "";
+	const parseImageId = globalThis.CineTraktTraktImdbResolver?.getTraktMediaIdFromImageUrl;
+	if (typeof parseImageId !== "function") return "";
+
+	for (const image of card.querySelectorAll('img[src], img[srcset]')) {
+		for (const candidate of [image.currentSrc, image.src, image.getAttribute('src')]) {
+			const traktId = parseImageId(candidate, 'shows');
+			if (traktId) return traktId;
+		}
+	}
+
+	return "";
+}
+
+function findEpisodeLookupContext(element, fallbackContext = null) {
+	const officialCard = element
+		?.closest('.trakt-card-footer-information')
+		?.closest('.trakt-card');
+	if (officialCard) return officialCard;
+
+	for (let current = element; current && current !== document.body; current = current.parentElement) {
+		const rect = current.getBoundingClientRect();
+		if (rect.width > 900 || rect.height > 520) continue;
+		if (current.matches?.('a[href*="/shows/"]')
+			|| current.querySelector?.('a[href*="/shows/"]')
+			|| getTraktShowIdFromCard(current)) {
+			return current;
+		}
+	}
+
+	return fallbackContext;
+}
+
+function getBestShowLinkFromEpisodeElement(element, context) {
+	const closestLink = element.closest('a[href*="/shows/"]');
+	const episodeLinkData = getEpisodeLinkData(closestLink);
+	if (episodeLinkData) return episodeLinkData.episodeData.showUrl;
+	const canonicalShowUrl = getCanonicalTraktShowUrl(closestLink?.href);
+	if (canonicalShowUrl) return canonicalShowUrl;
+	return getBestShowLinkFromCard(context);
+}
+
+async function getImdbIdFromTraktShowUrl(showUrl, traktShowId = "") {
 	const showSlug = getShowSlugFromTraktUrl(showUrl);
+	const lookupId = showSlug || String(traktShowId || "").replace(/\D/g, "");
+	if (!lookupId) return "";
 
-	if (!showSlug) return "";
-
-	return globalThis.CineTraktImdbCache.resolve(showSlug, async () => {
-		try {
-			const cleanShowUrl = `${window.location.origin}/shows/${showSlug}`;
-			const response = await fetch(cleanShowUrl, {
-				credentials: "include",
-			});
-
-			const html = await response.text();
-			const imdbId = findImdbIdInHtml(html, showSlug);
-
-			if (imdbId) return imdbId;
-		} catch {
-			// The hidden same-origin page below is the compatibility fallback.
-		}
-
-		return getImdbIdFromHiddenTraktIframe(showSlug);
-	});
+	return globalThis.CineTraktImdbCache.resolve(
+		showSlug || `trakt-show-${lookupId}`,
+		() => requestTraktImdbId(`/shows/${lookupId}`),
+	);
 }
 
 function getCleanText(value) {
@@ -615,13 +787,18 @@ function getCleanText(value) {
 }
 
 function findContinueWatchingCardFromElement(element) {
+	const officialCard = element
+		?.closest('.trakt-card-footer-information')
+		?.closest('.trakt-card');
+	if (officialCard) return officialCard;
+
 	let current = element;
 
 	while (current && current !== document.body) {
 		const rect = current.getBoundingClientRect();
 		const text = current.textContent || "";
 
-		const hasEpisodeLink = current.querySelector('a[href*="/shows/"][href*="/seasons/"][href*="/episodes/"]');
+		const hasEpisodeLink = findEpisodeLinkData(current);
 		const hasEpisodeText = text.match(/S\s*\d+\s*[•·.-]\s*E\s*\d+/i);
 		const hasImage = current.querySelector("img");
 		const hasTraktButton = getActionButtonFromCard(current);
@@ -731,14 +908,17 @@ function isCardInContinueWatchingArea(card) {
 }
 
 
-function prepareSeasonEpisodeTextLinkFromShowUrl(elements, episodeData, showUrl) {
+function prepareSeasonEpisodeTextLinkFromShowUrl(elements, episodeData, showUrl, card = null) {
 	const targets = (Array.isArray(elements) ? elements : [elements]).filter(Boolean);
-	if (targets.length === 0 || !episodeData || !showUrl) return;
+	if (targets.length === 0 || !episodeData) return;
+	markSeasonEpisodeTargetsPreparing(targets, episodeData);
 
 	const showSlug = getShowSlugFromTraktUrl(showUrl);
-	if (!showSlug) return;
+	const traktShowId = getTraktShowIdFromCard(card);
+	const cacheKey = showSlug || (traktShowId ? `trakt-show-${traktShowId}` : "");
+	if (!cacheKey) return;
 
-	const cachedImdbId = getCachedTraktImdbId(showSlug);
+	const cachedImdbId = getCachedTraktImdbId(cacheKey);
 	if (cachedImdbId) {
 		const stremioUrl = buildStremioEpisodeUrl(cachedImdbId, episodeData.season, episodeData.episode);
 		makeSeasonEpisodeTargetsClickable(targets, episodeData, stremioUrl);
@@ -749,7 +929,7 @@ function prepareSeasonEpisodeTextLinkFromShowUrl(elements, episodeData, showUrl)
 	if (preparationTarget.dataset.watchOnStremioLinkPrepareStarted === "true") return;
 	preparationTarget.dataset.watchOnStremioLinkPrepareStarted = "true";
 
-	getImdbIdFromTraktShowUrl(showUrl).then((imdbId) => {
+	getImdbIdFromTraktShowUrl(showUrl, traktShowId).then((imdbId) => {
 		if (!imdbId) {
 			delete preparationTarget.dataset.watchOnStremioLinkPrepareStarted;
 			return;
@@ -769,16 +949,19 @@ function linkifyContinueWatchingSeasonEpisodeTexts() {
 		const episodeData = getSeasonEpisodeFromText(text);
 		if (!episodeData) return;
 
-		const context = findContinueWatchingCardFromElement(element) || findNearestEpisodeContext(element);
+		const initialContext = findContinueWatchingCardFromElement(element) || findNearestEpisodeContext(element);
+		const initialTargets = getSeasonEpisodeClickableTargets(element, initialContext);
+		markSeasonEpisodeTargetsPreparing(initialTargets, episodeData);
+		const context = findEpisodeLookupContext(element, initialContext);
 		if (!context || !isCardInContinueWatchingArea(context)) return;
 
-		const showUrl = getBestShowLinkFromCard(context);
-		if (!showUrl) return;
+		const showUrl = getBestShowLinkFromEpisodeElement(element, context);
 
 		prepareSeasonEpisodeTextLinkFromShowUrl(
 			getSeasonEpisodeClickableTargets(element, context),
 			episodeData,
 			showUrl,
+			context,
 		);
 	});
 }
@@ -792,6 +975,7 @@ function insertContinueWatchingStremioButtonsTraktV3() {
 }
 	const api = Object.freeze({
 		update: insertStremioButtonTraktV3,
+		refreshDetailPosterTarget: refreshCinetraktDetailPosterTarget,
 		isPageRelevant: isTraktPageNeedingExtensionWork,
 		getImdbIdFromPage,
 		getCachedImdbId: getCachedTraktImdbId,
