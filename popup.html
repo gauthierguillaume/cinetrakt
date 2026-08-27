@@ -8,35 +8,32 @@
 	</head>
 	<body>
 		<header class="app-header">
-			<img src="favicon.png" alt="" width="38" height="38">
-			<div>
-				<h1>CineTrakt</h1>
-				<p>Personnaliser les fonctionnalites</p>
+			<div class="app-brand">
+				<img src="favicon.png" alt="" width="38" height="38">
+				<div>
+					<h1>CineTrakt</h1>
+					<p id="status" role="status" aria-live="polite">Personnaliser les fonctionnalités</p>
+				</div>
 			</div>
-		</header>
-
-		<main>
 			<div class="master-row">
 				<div>
 					<strong>Tout activer</strong>
 					<span id="enabled-count"></span>
 				</div>
-				<label class="switch" title="Activer ou desactiver toutes les fonctionnalites">
-					<input id="master-toggle" type="checkbox" aria-label="Activer toutes les fonctionnalites">
+				<label class="switch" title="Activer ou désactiver toutes les fonctionnalités">
+					<input id="master-toggle" type="checkbox" aria-label="Activer toutes les fonctionnalités">
 					<span aria-hidden="true"></span>
 				</label>
 			</div>
-
-			<div id="feature-groups"></div>
-		</main>
-
-		<footer>
-			<p id="status" role="status" aria-live="polite">Les changements seront appliques apres validation.</p>
 			<div class="footer-actions">
-				<button id="reset-button" class="button secondary" type="button">Reinitialiser</button>
+				<button id="reset-button" class="button secondary" type="button">Réinitialiser</button>
 				<button id="apply-button" class="button primary" type="button">Appliquer</button>
 			</div>
-		</footer>
+		</header>
+
+		<main>
+			<div id="feature-groups"></div>
+		</main>
 
 		<script src="settings.js"></script>
 		<script src="popup.js"></script>

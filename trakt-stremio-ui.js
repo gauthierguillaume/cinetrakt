@@ -11,6 +11,8 @@
 	const { openFromMouseEvent: openStremioFromMouseEvent } = globalThis.CineTraktStremioOpen;
 	const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
 	let currentDetailPosterStremioUrl = '';
+	let pendingDetailPosterMedia = null;
+	let pendingDetailPosterResolution = null;
 
 	function isFeatureEnabled() {
 		return globalThis.CineTraktSettings?.isEnabled('traktStremioLinks') !== false;
@@ -174,6 +176,8 @@ function bindCinetraktDetailPosterTargets(stremioUrl) {
 function refreshCinetraktDetailPosterTarget() {
 	if (currentDetailPosterStremioUrl) {
 		bindCinetraktDetailPosterTargets(currentDetailPosterStremioUrl);
+	} else if (pendingDetailPosterMedia) {
+		bindCinetraktPendingDetailPosterTargets();
 	}
 }
 
@@ -222,6 +226,79 @@ function getDetailMediaFromTraktUrl(url) {
 	}
 }
 
+function getTraktMediaIdFromDetailPoster(expectedKind) {
+	const parseImageId = globalThis.CineTraktTraktImdbResolver?.getTraktMediaIdFromImageUrl;
+	if (typeof parseImageId !== 'function') return '';
+
+	for (const image of document.querySelectorAll(
+		'.trakt-summary-poster img, .trakt-summary-poster-container img, .cinetrakt-sticky-poster-stage img',
+	)) {
+		for (const candidate of [image.currentSrc, image.src, image.getAttribute('src')]) {
+			const traktId = parseImageId(candidate, expectedKind);
+			if (traktId) return traktId;
+		}
+	}
+
+	return '';
+}
+
+async function resolvePendingDetailPosterStremioUrl() {
+	const pending = pendingDetailPosterMedia;
+	if (!pending || window.location.pathname !== pending.media.pathname) return '';
+	if (pendingDetailPosterResolution) return pendingDetailPosterResolution;
+
+	pendingDetailPosterResolution = (async () => {
+		let imdbId = getImdbIdFromPage();
+		if (!imdbId) imdbId = await requestTraktImdbId(pending.media.pathname);
+
+		if (!imdbId) {
+			const traktId = getTraktMediaIdFromDetailPoster(pending.media.kind);
+			if (traktId) {
+				imdbId = await requestTraktImdbId(`/${pending.media.kind}/${traktId}`);
+			}
+		}
+
+		if (!imdbId || window.location.pathname !== pending.media.pathname) return '';
+		const cacheKey = pending.media.kind === 'shows'
+			? pending.media.slug
+			: `movie:${pending.media.slug}`;
+		globalThis.CineTraktImdbCache.set(cacheKey, imdbId);
+		return buildStremioDetailUrl(pending.type, imdbId);
+	})().finally(() => {
+		pendingDetailPosterResolution = null;
+	});
+
+	return pendingDetailPosterResolution;
+}
+
+function bindCinetraktPendingDetailPosterTargets() {
+	if (!pendingDetailPosterMedia || currentDetailPosterStremioUrl) return;
+
+	getCinetraktDetailPosterTargets().forEach((target) => {
+		if (target.dataset.cinetraktPendingStremioBound === '1') return;
+		target.dataset.cinetraktPendingStremioBound = '1';
+		target.style.cursor = 'pointer';
+
+		target.addEventListener('click', async (event) => {
+			if (currentDetailPosterStremioUrl
+				|| target.dataset.cinetraktStremioActive === 'true'
+				|| !isFeatureEnabled()
+				|| shouldPreserveNativePosterInteraction(target, event)
+				|| event.cinetraktStremioHandled) return;
+
+			event.cinetraktStremioHandled = true;
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
+
+			const stremioUrl = await resolvePendingDetailPosterStremioUrl();
+			if (!stremioUrl) return;
+			bindCinetraktDetailPosterTargets(stremioUrl);
+			openStremioFromMouseEvent(stremioUrl, null);
+		}, true);
+	});
+}
+
 function getImdbIdFromTraktMediaUrl(mediaUrl) {
 	const media = getDetailMediaFromTraktUrl(mediaUrl);
 	if (!media) return Promise.resolve('');
@@ -268,6 +345,13 @@ function insertStremioButtonTraktV3() {
 
 	const detailPathname = window.location.pathname;
 	const type = getTraktMediaType(window.location.href);
+	const detailMedia = getDetailMediaFromTraktUrl(window.location.href);
+	if (detailMedia && pendingDetailPosterMedia?.media.pathname !== detailPathname) {
+		currentDetailPosterStremioUrl = '';
+		pendingDetailPosterResolution = null;
+	}
+	pendingDetailPosterMedia = detailMedia ? { media: detailMedia, type } : null;
+	bindCinetraktPendingDetailPosterTargets();
 	if (type === 'series') markSeasonEpisodeTextTargetsPreparing();
 	const immediateImdbId = getImdbIdFromPage();
 	if (immediateImdbId) {
@@ -980,6 +1064,7 @@ function insertContinueWatchingStremioButtonsTraktV3() {
 		getImdbIdFromPage,
 		getCachedImdbId: getCachedTraktImdbId,
 		getShowSlugFromUrl: getShowSlugFromTraktUrl,
+		resolveImdbIdFromMediaUrl: getImdbIdFromTraktMediaUrl,
 		resolveImdbIdFromShowUrl: getImdbIdFromTraktShowUrl,
 		getCleanText,
 	});

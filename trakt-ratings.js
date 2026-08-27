@@ -10,6 +10,7 @@
 		getImdbIdFromPage,
 		getCachedImdbId: getCachedTraktImdbId,
 		getShowSlugFromUrl: getShowSlugFromTraktUrl,
+		resolveImdbIdFromMediaUrl: getImdbIdFromTraktMediaUrl,
 		resolveImdbIdFromShowUrl: getImdbIdFromTraktShowUrl,
 	} = globalThis.CineTraktTraktStremioUi;
 	const {
@@ -360,8 +361,8 @@ function resetTraktRatingColors() {
 
 
 
-/* Sur la fiche, CineTrakt garde uniquement IMDb. Le lien natif qui enveloppe
-	les notes reste intact et continue d'ouvrir le panneau latéral complet. */
+/* Sur la fiche, CineTrakt garde uniquement IMDb. Le clic sur la note ouvre
+	IMDb, tandis que la flèche native voisine conserve le panneau Ratings. */
 function injectWatchOnStremioTraktMoreRatingsStyles() {
 	if (document.getElementById('watch-on-stremio-trakt-more-ratings-styles')) return;
 
@@ -375,6 +376,10 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 		.trakt-summary-ratings.wos-trakt-ratings-imdb-only {
 			display: inline-flex !important;
 			align-items: center !important;
+		}
+
+		.wos-imdb-direct-link {
+			cursor: pointer !important;
 		}
 
 		.wos-imdb-ratings-popup-row {
@@ -504,6 +509,49 @@ function getWatchOnStremioImdbRatingsId(summaryRatings) {
 
 	const showSlug = getShowSlugFromTraktUrl(window.location.href);
 	return getCachedTraktImdbId(showSlug) || getImdbIdFromPage() || '';
+}
+
+function openWatchOnStremioImdbTitle(imdbId) {
+	if (!/^tt\d{7,}$/.test(imdbId)) return false;
+
+	const link = document.createElement('a');
+	link.href = `https://www.imdb.com/title/${imdbId}/`;
+	link.target = '_blank';
+	link.rel = 'noopener noreferrer';
+	link.hidden = true;
+	document.body.appendChild(link);
+	link.click();
+	link.remove();
+	return true;
+}
+
+function bindWatchOnStremioImdbDirectLink(imdbItem, imdbId) {
+	if (!imdbItem || !/^tt\d{7,}$/.test(imdbId)) return;
+
+	imdbItem.classList.add('wos-imdb-direct-link');
+	imdbItem.dataset.cinetraktImdbId = imdbId;
+	imdbItem.setAttribute('title', 'Open on IMDb');
+
+	if (imdbItem.dataset.cinetraktImdbDirectBound === 'true') return;
+	imdbItem.dataset.cinetraktImdbDirectBound = 'true';
+	imdbItem.addEventListener('click', (event) => {
+		const directImdbId = imdbItem.dataset.cinetraktImdbId || '';
+		if (!isCinetraktFeatureEnabled('traktRatingsToggle')
+			|| !/^tt\d{7,}$/.test(directImdbId)) return;
+
+		event.preventDefault();
+		event.stopPropagation();
+		event.stopImmediatePropagation();
+		openWatchOnStremioImdbTitle(directImdbId);
+	}, true);
+}
+
+function resetWatchOnStremioImdbDirectLinks() {
+	document.querySelectorAll('.wos-imdb-direct-link').forEach((item) => {
+		item.classList.remove('wos-imdb-direct-link');
+		item.removeAttribute('data-cinetrakt-imdb-id');
+		item.removeAttribute('title');
+	});
 }
 
 function openWatchOnStremioImdbRatingsPopup(imdbId) {
@@ -660,8 +708,24 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	if (!imdbItem) return;
 	const ratingsToggleEnabled = isCinetraktFeatureEnabled('traktRatingsToggle');
 	const ratingsPopupEnabled = isCinetraktFeatureEnabled('imdbEpisodeRatingsPopup');
+	const directImdbId = getWatchOnStremioImdbRatingsId(summaryRatings);
 
 	summaryRatings.querySelector(':scope > .wos-trakt-ratings-toggle')?.remove();
+	if (ratingsToggleEnabled && directImdbId) {
+		bindWatchOnStremioImdbDirectLink(imdbItem, directImdbId);
+	} else if (!ratingsToggleEnabled) {
+		resetWatchOnStremioImdbDirectLinks();
+	}
+
+	if (ratingsToggleEnabled && !directImdbId
+		&& summaryRatings.dataset.cinetraktImdbDirectRequestedRoute !== window.location.pathname) {
+		const route = window.location.pathname;
+		summaryRatings.dataset.cinetraktImdbDirectRequestedRoute = route;
+		getImdbIdFromTraktMediaUrl(window.location.href).then((resolvedImdbId) => {
+			if (!resolvedImdbId || window.location.pathname !== route) return;
+			bindWatchOnStremioImdbDirectLink(imdbItem, resolvedImdbId);
+		});
+	}
 
 	const isShowPage = /^\/shows\/[^/]+\/?$/.test(window.location.pathname);
 	let popupButton = getWatchOnStremioCanonicalRatingsPopupButton();
@@ -712,6 +776,7 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 function resetTraktRatingsControls() {
 	document.querySelectorAll('.wos-trakt-ratings-toggle, .wos-imdb-ratings-popup-button')
 		.forEach((element) => element.remove());
+	resetWatchOnStremioImdbDirectLinks();
 	document.querySelectorAll('.wos-trakt-rating-hidden')
 		.forEach((element) => element.classList.remove('wos-trakt-rating-hidden'));
 	document.querySelectorAll('.wos-trakt-ratings-imdb-only')

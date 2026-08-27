@@ -92,6 +92,10 @@ test('site entry points only coordinate their feature modules', () => {
 	assert.match(traktEntrySource, /CineTraktTraktRuntime\?\.start\(updateFeatures\)/);
 	assert.match(traktEntrySource, /posterLayout\.setEnabled/);
 	assert.match(traktEntrySource, /soundtrack\.update/);
+	assert.ok(
+		traktEntrySource.indexOf('stremioUi.update()') < traktEntrySource.indexOf('posterLayout.setEnabled'),
+		'Stremio links must initialize before visual layout features',
+	);
 
 	assert.ok(imdbEntrySource.split(/\r?\n/).length < 40);
 	assert.match(imdbEntrySource, /traktButton\.update\(\)/);
@@ -140,6 +144,11 @@ test('poster integration preserves native Trakt href values', () => {
 	assert.match(traktPosterSource, /originalPosterRect\.top - CINETRAKT_POSTER_TOP_REDUCTION/);
 	assert.match(traktPosterSource, /const CINETRAKT_POSTER_BOTTOM_SAFETY = 12/);
 	assert.match(traktPosterSource, /const contentLeft = summaryLeft \+ width \+ posterSideGap/);
+	assert.match(traktPosterSource, /getRightListInnerWidth\(getCinetraktViewportWidth\(\), contentLeft\)/);
+	assert.match(traktPosterSource, /document\.documentElement\.style\.setProperty\('--list-inner-width'/);
+	assert.match(traktPosterSource, /document\.documentElement\.style\.removeProperty\('--list-inner-width'\)/);
+	assert.match(traktPosterSource, /\.cinetrakt-sticky-right-section \.section-list-horizontal-scroll/);
+	assert.match(traktPosterSource, /padding-inline-end:\s*0\s*!important/);
 	assert.match(traktPosterSource, /const CINETRAKT_POSTER_SIDE_GAP = 16/);
 	assert.match(traktPosterSource, /\.cinetrakt-soundtrack-card:not\(\[hidden\]\)/);
 	assert.match(traktPosterSource, /sidebarVisualRight \+ CINETRAKT_POSTER_SIDE_GAP/);
@@ -194,6 +203,42 @@ test('poster layout does not turn the page into a nested vertical scroll contain
 	assert.doesNotMatch(pageOverflowRule, /overflow-x:\s*hidden\s*!important/);
 });
 
+test('poster layout places native Trivia beside Sentiment without compressing either card', () => {
+	assert.match(traktPosterSource, /function attachCinetraktTriviaBesideSentiment\(state\)/);
+	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(contextualContent, \['sentiment'\]\)/);
+	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(state\.mainContent, \['trivia', 'anecdotes'\]\)/);
+	assert.match(traktPosterSource, /function canPlaceCinetraktTriviaBesideSentiment\(state, contextualContent, sentimentSection\)/);
+	assert.match(traktPosterSource, /const minimumWidth = sentimentWidth[\s\S]*?\+ \(cardWidth \* 2\)[\s\S]*?\+ \(CINETRAKT_CONTEXTUAL_PAIR_GAP \* 2\)/);
+	assert.match(traktPosterSource, /row\.append\(sentimentSection, triviaSection\)/);
+	assert.match(traktPosterSource, /classList\.add\('cinetrakt-contextual-pair-ready'\)/);
+	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row\s*\{[\s\S]*?grid-template-columns:\s*var\(--ni-320\) var\(--ni-480\)\s*!important/);
+	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row > \.cinetrakt-summary-sentiment\s*\{[\s\S]*?min-width:\s*var\(--ni-320\)\s*!important/);
+	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row > \.cinetrakt-summary-trivia\s*\{[\s\S]*?min-width:\s*var\(--ni-480\)\s*!important/);
+	assert.match(traktPosterSource, /cinetrakt-contextual-pair-ready[\s\S]*?calc\(var\(--ni-320\) \+ var\(--ni-480\) \+ var\(--gap-m, 16px\)\)/);
+	// Une fenêtre plus étroite revient à l'empilement vertical au lieu de rogner les cartes.
+	assert.match(traktPosterSource, /sentimentSection\.insertAdjacentElement\('afterend', triviaSection\)/);
+	assert.match(traktPosterSource, /moveCinetraktElementWithPlaceholder\([\s\S]*?'CineTrakt original Trivia position'/);
+	assert.match(traktPosterSource, /function restoreCinetraktTriviaToNativeFlow\(state\)/);
+	assert.match(traktPosterSource, /function unwrapCinetraktSentimentTriviaRow\(state\)/);
+	assert.match(traktPosterSource, /if \(!useStickyLayout\) \{[\s\S]*?restoreCinetraktTriviaToNativeFlow\(state\)/);
+	assert.match(traktPosterSource, /restoreCinetraktMovedElement\(state\.triviaEntry\)/);
+	assert.match(traktPosterSource, /\.cinetrakt-summary-trivia\s*\{[\s\S]*?width:\s*100%\s*!important/);
+	assert.match(traktPosterSource, /grid-template-columns:[\s\S]*?minmax\(0, 1fr\)[\s\S]*?var\(--ni-480\)\s*!important/);
+	assert.doesNotMatch(traktPosterSource, /--width-sentiment-card:/);
+	assert.doesNotMatch(traktPosterSource, /--width-trivia-card:\s*100%/);
+	assert.match(traktPosterSource, /querySelector\('footer\.trakt-footer, \[role="contentinfo"\]'\)/);
+	assert.doesNotMatch(traktPosterSource, /querySelector\('footer, \[role="contentinfo"\]'\)/);
+});
+
+test('moved Trivia keeps the native section rhythm and soundtrack text follows the Trakt theme', () => {
+	assert.match(traktPosterSource, /\.cinetrakt-summary-trivia\s*\{[\s\S]*?margin-top:\s*var\(--gap-m, 16px\)\s*!important/);
+	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row\s*\{[\s\S]*?margin-top:\s*var\(--gap-m, 16px\)\s*!important/);
+	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row > \.cinetrakt-summary-sentiment\s*\{[\s\S]*?margin:\s*0\s*!important/);
+	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row > \.cinetrakt-summary-trivia\s*\{[\s\S]*?margin:\s*8px 0 0\s*!important/);
+	assert.match(traktSoundtrackSource, /color:\s*var\(--color-text-primary, var\(--color-foreground,/);
+	assert.match(traktSoundtrackSource, /color:\s*var\(--color-text-secondary, var\(--color-foreground,/);
+});
+
 test('detail poster uses a clean Stremio interaction without the native promo overlay', () => {
 	assert.match(traktPosterSource, /\.trakt-summary-poster-overlay\s*\{[\s\S]*?display:\s*none\s*!important/);
 	assert.match(traktPosterSource, /\.trakt-summary-poster\s*>\s*a\s*\{[\s\S]*?pointer-events:\s*none\s*!important/);
@@ -211,16 +256,28 @@ test('detail poster uses a clean Stremio interaction without the native promo ov
 	assert.match(traktStremioSource, /if \(stickyPosterStage\) return \[stickyPosterStage\]/);
 	assert.match(traktStremioSource, /target\.dataset\.cinetraktStremioActive = 'false'/);
 	assert.match(traktStremioSource, /target\.dataset\.cinetraktStremioActive = 'true'/);
+	assert.match(traktStremioSource, /bindCinetraktPendingDetailPosterTargets\(\)/);
+	assert.match(traktStremioSource, /resolvePendingDetailPosterStremioUrl\(\)/);
+	assert.match(traktStremioSource, /getTraktMediaIdFromDetailPoster\(pending\.media\.kind\)/);
+	assert.match(traktStremioSource, /requestTraktImdbId\(`\/\$\{pending\.media\.kind\}\/\$\{traktId\}`\)/);
+	assert.match(traktStremioSource, /openStremioFromMouseEvent\(stremioUrl, null\)/);
 	assert.doesNotMatch(traktPosterSource, /opacity:\s*1\s*!important/);
 	assert.doesNotMatch(traktStremioSource, /cinetrakt-sticky-poster-image/);
 });
 
-test('summary ratings keep only IMDb and place one episode heatmap after the complete native IMDb trigger', () => {
+test('summary ratings keep only IMDb, open its title directly, and preserve the native arrow trigger', () => {
 	assert.match(traktRatingsSource, /querySelectorAll\('rating\[data-variant="row"\]'\)/);
 	assert.match(traktRatingsSource, /getAttribute\('viewBox'\)/);
 	assert.match(traktRatingsSource, /#f6c700/);
 	assert.match(traktRatingsSource, /width \/ height > 1\.8/);
 	assert.match(traktRatingsSource, /item\.classList\.add\('wos-trakt-rating-hidden'\)/);
+	assert.match(traktRatingsSource, /function openWatchOnStremioImdbTitle\(imdbId\)/);
+	assert.match(traktRatingsSource, /`https:\/\/www\.imdb\.com\/title\/\$\{imdbId\}\//);
+	assert.match(traktRatingsSource, /link\.target = '_blank'/);
+	assert.match(traktRatingsSource, /imdbItem\.addEventListener\('click',[\s\S]*?event\.stopImmediatePropagation\(\)/);
+	assert.match(traktRatingsSource, /bindWatchOnStremioImdbDirectLink\(imdbItem, directImdbId\)/);
+	assert.match(traktRatingsSource, /getImdbIdFromTraktMediaUrl\(window\.location\.href\)/);
+	assert.match(traktStremioSource, /resolveImdbIdFromMediaUrl: getImdbIdFromTraktMediaUrl/);
 	assert.match(traktRatingsSource, /querySelectorAll\('\.wos-imdb-ratings-popup-button'\)/);
 	assert.match(traktRatingsSource, /buttons\.forEach\(\(button\) => button\.remove\(\)\)/);
 	assert.match(traktRatingsSource, /summaryRatings\.closest\(/);
@@ -274,4 +331,17 @@ test('collection cards normalize malformed SVG viewBox values before cloning', (
 	assert.match(traktCustomizationsSource, /\.slice\(0, 8\)/);
 	assert.match(traktCustomizationsSource, /--cinetrakt-collection-useful-width/);
 	assert.match(traktCustomizationsSource, /requestAnimationFrame/);
+});
+
+test('collection cards widen to keep their full titles on one line', () => {
+	assert.match(traktCustomizationsSource, /function revealCinetraktCollectionTitle\(collectionCard\)/);
+	assert.match(traktCustomizationsSource, /titleLink\.classList\.add\('cinetrakt-collection-title'\)/);
+	assert.match(traktCustomizationsSource, /revealCinetraktCollectionTitle\(collectionCardCopy\)/);
+	assert.match(traktCustomizationsSource, /\.cinetrakt-collection-title,[\s\S]*?white-space:\s*nowrap\s*!important/);
+	assert.match(traktCustomizationsSource, /\.cinetrakt-collection-title,[\s\S]*?text-overflow:\s*clip\s*!important/);
+	assert.match(traktCustomizationsSource, /-webkit-line-clamp:\s*unset\s*!important/);
+	assert.match(traktCustomizationsSource, /--cinetrakt-collection-useful-width', `\$\{posterWidth\}px`/);
+	assert.match(traktCustomizationsSource, /\[title, \.\.\.title\.querySelectorAll\('\*'\)\]/);
+	assert.match(traktCustomizationsSource, /part\.scrollWidth - part\.clientWidth/);
+	assert.match(traktCustomizationsSource, /compactCardWidth \+ titleOverflow \+ titleSafety/);
 });

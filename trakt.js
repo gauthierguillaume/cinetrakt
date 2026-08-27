@@ -18,6 +18,12 @@
 	async function updateFeatures() {
 		await globalThis.CineTraktSettings?.ready;
 		if (window.location.hostname !== 'app.trakt.tv') return;
+		const pageRelevant = stremioUi.isPageRelevant();
+
+		/* L'ouverture Stremio est la fonction principale : elle est initialisée
+		   avant les personnalisations visuelles afin qu'une erreur de layout ne
+		   puisse jamais désactiver les pochettes ou les titres d'épisodes. */
+		if (pageRelevant && isFeatureEnabled('traktStremioLinks')) stremioUi.update();
 
 		posterLayout.setEnabled(isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		if (isFeatureEnabled('traktSoundtrack')) soundtrack.update();
@@ -28,8 +34,7 @@
 			navigationCleanupEnabled: isFeatureEnabled('traktNavigationCleanup'),
 		});
 
-		if (!stremioUi.isPageRelevant()) return;
-		if (isFeatureEnabled('traktStremioLinks')) stremioUi.update();
+		if (!pageRelevant) return;
 		ratings.setColorsEnabled(isFeatureEnabled('traktRatingColors'));
 		ratings.setControlsEnabled({
 			toggleEnabled: isFeatureEnabled('traktRatingsToggle'),

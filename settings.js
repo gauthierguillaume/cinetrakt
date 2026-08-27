@@ -20,19 +20,19 @@
 	});
 
 	const DEFINITIONS = Object.freeze([
-		{ key: 'traktStremioLinks', group: 'Trakt', title: 'Ouverture Stremio', description: 'Jaquettes et titres d’episodes ouvrent directement Stremio.' },
-		{ key: 'traktRatingColors', group: 'Trakt', title: 'Notes et etoiles', description: 'Affiche les notes /10 et applique les couleurs aux notes et etoiles.' },
-		{ key: 'traktRatingsToggle', group: 'Trakt', title: 'IMDb uniquement', description: 'Masque les autres sources sur la fiche tout en conservant le panneau natif des notes.' },
-		{ key: 'imdbEpisodeRatingsPopup', group: 'Trakt', title: 'IMDb Ratings', description: 'Ajoute le bouton Heatmap et la fenetre des notes par episode.' },
-		{ key: 'traktPosterLayout', group: 'Trakt', title: 'Grande affiche', description: 'Conserve la mise en page CineTrakt avec une affiche agrandie.' },
-		{ key: 'traktSoundtrack', group: 'Trakt', title: 'Lecteur Soundtrack', description: 'Affiche la pochette Spotify et le controle dans la barre laterale.' },
-		{ key: 'traktSoundtrackAutoplay', group: 'Trakt', title: 'Lecture automatique', description: 'Lance automatiquement une piste quand une bande-son est disponible.' },
-		{ key: 'traktCollectionCard', group: 'Trakt', title: 'Carte Collection', description: 'Affiche la collection officielle sous le synopsis du film.' },
-		{ key: 'traktNavigationCleanup', group: 'Trakt', title: 'Navigation simplifiee', description: 'Masque Library et Collaborations dans la barre laterale.' },
-		{ key: 'imdbTraktButton', group: 'IMDb', title: 'Bouton Trakt', description: 'Affiche le logo Trakt et ouvre la bonne fiche depuis IMDb.' },
-		{ key: 'imdbRatingColors', group: 'IMDb', title: 'Couleurs des notes', description: 'Colorise les notes, heatmaps et moyennes sur IMDb.' },
-		{ key: 'stremioCompactPanel', group: 'Stremio Web', title: 'Panneau compact', description: 'Isole la liste des streams et preserve son defilement.' },
-		{ key: 'newTabMovieDiscovery', group: 'Nouvel onglet', title: 'Film ou serie aleatoire', description: 'Affiche une pochette et des artworks TMDB sans texte.' },
+		{ key: 'traktStremioLinks', group: 'Trakt', category: 'Lecture et Stremio', title: 'Ouvrir dans Stremio', description: 'Ouvre films, séries et épisodes dans Stremio depuis leurs jaquettes et leurs titres.' },
+		{ key: 'traktSoundtrack', group: 'Trakt', category: 'Lecture et Stremio', title: 'Lecteur de bande-son', description: 'Affiche la pochette Spotify et les commandes de lecture dans la barre latérale.' },
+		{ key: 'traktSoundtrackAutoplay', group: 'Trakt', category: 'Lecture et Stremio', title: 'Lecture automatique', description: 'Lance automatiquement une piste lorsqu’une bande-son est disponible.' },
+		{ key: 'traktRatingColors', group: 'Trakt', category: 'Notes et IMDb', title: 'Notes et étoiles colorées', description: 'Affiche les notes sur 10 et applique leur couleur aux notes et aux étoiles.' },
+		{ key: 'traktRatingsToggle', group: 'Trakt', category: 'Notes et IMDb', title: 'Afficher seulement IMDb', description: 'Masque les autres sources sur la fiche, sans retirer le panneau natif des notes.' },
+		{ key: 'imdbEpisodeRatingsPopup', group: 'Trakt', category: 'Notes et IMDb', title: 'Notes IMDb par épisode', description: 'Ajoute le bouton Heatmap et ouvre le détail des notes de chaque épisode.' },
+		{ key: 'traktPosterLayout', group: 'Trakt', category: 'Affichage des fiches', title: 'Grande affiche', description: 'Agrandit l’affiche et active la mise en page détaillée de CineTrakt.' },
+		{ key: 'traktCollectionCard', group: 'Trakt', category: 'Affichage des fiches', title: 'Collection officielle', description: 'Place la collection officielle directement sous le synopsis du film.' },
+		{ key: 'traktNavigationCleanup', group: 'Trakt', category: 'Navigation', title: 'Navigation simplifiée', description: 'Masque Library et Collaborations dans la barre latérale de Trakt.' },
+		{ key: 'imdbTraktButton', group: 'IMDb', title: 'Bouton Trakt', description: 'Ajoute le logo Trakt et ouvre la fiche correspondante depuis IMDb.' },
+		{ key: 'imdbRatingColors', group: 'IMDb', title: 'Couleurs des notes', description: 'Colorise les notes, les heatmaps et les moyennes affichées sur IMDb.' },
+		{ key: 'stremioCompactPanel', group: 'Stremio Web', title: 'Panneau compact', description: 'Isole la liste des sources et conserve son défilement indépendant.' },
+		{ key: 'newTabMovieDiscovery', group: 'Nouvel onglet', title: 'Film ou série aléatoire', description: 'Affiche une sélection visuelle aléatoire à partir des images TMDB.' },
 	]);
 
 	let values = { ...DEFAULTS };

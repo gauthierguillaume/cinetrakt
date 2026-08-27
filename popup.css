@@ -13,7 +13,7 @@ body {
 	display: flex;
 	flex-direction: column;
 	margin: 0;
-	width: 760px;
+	width: 800px;
 	height: 600px;
 	overflow: hidden;
 	background: #111015;
@@ -22,12 +22,20 @@ body {
 .app-header {
 	display: flex;
 	align-items: center;
-	gap: 12px;
-	padding: 12px 16px 10px;
+	justify-content: space-between;
+	gap: 20px;
+	padding: 10px 16px;
 	border-bottom: 1px solid #2b2830;
 }
 
-.app-header img {
+.app-brand {
+	display: flex;
+	min-width: 0;
+	align-items: center;
+	gap: 12px;
+}
+
+.app-brand img {
 	border-radius: 8px;
 }
 
@@ -57,7 +65,7 @@ main {
 	flex: 1 1 auto;
 	min-height: 0;
 	overflow: hidden;
-	padding: 8px 12px 4px;
+	padding: 4px 12px;
 }
 
 .master-row,
@@ -69,8 +77,12 @@ main {
 }
 
 .master-row {
-	padding: 7px 8px 9px;
-	border-bottom: 1px solid #2b2830;
+	flex: 0 0 auto;
+	padding: 0;
+}
+
+.app-header .master-row > div {
+	text-align: right;
 }
 
 .master-row strong {
@@ -87,25 +99,25 @@ main {
 .feature-group {
 	--group-accent: #a63dd2;
 	--group-accent-soft: rgb(166 61 210 / 12%);
-	padding-top: 9px;
+	padding-top: 7px;
 }
 
 #feature-groups {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-	grid-template-rows: auto auto 1fr;
-	column-gap: 12px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-template-rows: auto auto;
+	column-gap: 10px;
 	align-items: start;
 }
 
 .feature-group[data-group="trakt"] {
-	grid-column: 1;
-	grid-row: 1 / span 3;
+	grid-column: 1 / -1;
+	grid-row: 1;
 }
 
 .feature-group[data-group="imdb"] {
-	grid-column: 2;
-	grid-row: 1;
+	grid-column: 1;
+	grid-row: 2;
 }
 
 .feature-group[data-group="stremio"] {
@@ -114,8 +126,8 @@ main {
 }
 
 .feature-group[data-group="tmdb"] {
-	grid-column: 2;
-	grid-row: 3;
+	grid-column: 3;
+	grid-row: 2;
 }
 
 .feature-group[data-group="imdb"] {
@@ -134,7 +146,7 @@ main {
 }
 
 .feature-group h2 {
-	margin: 0 8px 5px;
+	margin: 0 8px 4px;
 	color: var(--group-accent);
 	font-size: 11px;
 	font-weight: 750;
@@ -149,9 +161,37 @@ main {
 	overflow: hidden;
 }
 
+.feature-subgroups {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+}
+
+.feature-subgroup-column {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.feature-subgroup {
+	min-width: 0;
+}
+
+.feature-subgroup h3 {
+	margin: 0 7px 3px;
+	color: #d8b8e6;
+	font-size: 10px;
+	font-weight: 720;
+	letter-spacing: 0.025em;
+}
+
 .feature-row {
-	height: 40px;
-	padding: 5px 10px;
+	align-items: flex-start;
+	min-height: 40px;
+	height: auto;
+	gap: 10px;
+	padding: 5px 8px;
 }
 
 .feature-row + .feature-row {
@@ -159,6 +199,7 @@ main {
 }
 
 .feature-copy {
+	flex: 1 1 auto;
 	min-width: 0;
 }
 
@@ -170,11 +211,14 @@ main {
 
 .feature-copy p {
 	margin-top: 1px;
-	overflow: hidden;
 	font-size: 10px;
 	line-height: 1.2;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	overflow-wrap: anywhere;
+	white-space: normal;
+}
+
+.feature-row .switch {
+	margin-top: 4px;
 }
 
 .switch {
@@ -229,13 +273,6 @@ main {
 .switch input:focus-visible + span {
 	outline: 2px solid #d79aed;
 	outline-offset: 2px;
-}
-
-footer {
-	flex: 0 0 auto;
-	padding: 8px 12px 10px;
-	border-top: 1px solid #2b2830;
-	background: #111015;
 }
 
 #status {
@@ -319,9 +356,9 @@ footer {
 
 .footer-actions {
 	display: flex;
+	flex: 0 0 auto;
 	justify-content: flex-end;
 	gap: 8px;
-	margin-top: 6px;
 }
 
 .button {

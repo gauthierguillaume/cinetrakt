@@ -103,3 +103,17 @@ test('storage changes update the in-memory feature snapshot', async () => {
 	assert.equal(harness.settings.isEnabled('traktPosterLayout'), false);
 	assert.equal(harness.settings.isEnabled('traktStremioLinks'), true);
 });
+
+test('every Trakt option belongs to a clear popup subcategory', () => {
+	const harness = loadSettings();
+	const traktFeatures = Array.from(harness.settings.DEFINITIONS)
+		.filter((feature) => feature.group === 'Trakt');
+	const categories = new Set(traktFeatures.map((feature) => feature.category));
+
+	assert.equal(traktFeatures.length, 9);
+	assert.deepEqual(
+		[...categories].sort(),
+		['Affichage des fiches', 'Lecture et Stremio', 'Navigation', 'Notes et IMDb'].sort(),
+	);
+	assert.ok(traktFeatures.every((feature) => feature.title && feature.description));
+});

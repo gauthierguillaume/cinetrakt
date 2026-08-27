@@ -37,3 +37,22 @@ test('extension HTML pages only reference local files that exist', () => {
 		references.forEach(assertLocalFileExists);
 	}
 });
+
+test('popup feature descriptions remain fully readable without an inner scrollbar', () => {
+	const css = fs.readFileSync(path.join(root, 'popup.css'), 'utf8');
+	const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8');
+	const descriptionRule = css.match(/\.feature-copy p\s*\{([\s\S]*?)\}/)?.[1] || '';
+	const mainRule = css.match(/main\s*\{([\s\S]*?)\}/)?.[1] || '';
+
+	assert.match(descriptionRule, /white-space:\s*normal/);
+	assert.doesNotMatch(descriptionRule, /text-overflow:\s*ellipsis/);
+	assert.doesNotMatch(descriptionRule, /overflow:\s*hidden/);
+	assert.match(mainRule, /overflow:\s*hidden/);
+	assert.doesNotMatch(mainRule, /overflow-y:\s*(?:auto|scroll)/);
+	assert.match(css, /\.feature-subgroups\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,/);
+	assert.match(css, /\.feature-subgroup-column\s*\{[\s\S]*?flex-direction:\s*column/);
+	assert.match(css, /\.feature-subgroup h3\s*\{/);
+	assert.match(html, /<header class="app-header">[\s\S]*?<div class="app-brand">[\s\S]*?<div class="master-row">[\s\S]*?<div class="footer-actions">/);
+	assert.doesNotMatch(html, /<main>\s*<div class="master-row">/);
+	assert.doesNotMatch(html, /<footer>/);
+});

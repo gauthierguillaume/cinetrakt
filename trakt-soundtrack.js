@@ -137,7 +137,7 @@ function injectCinetraktSoundtrackCardStyles() {
 
 		.cinetrakt-soundtrack-card {
 			box-sizing: border-box;
-			color: rgba(255, 255, 255, 0.92);
+			color: var(--color-text-primary, var(--color-foreground, rgba(255, 255, 255, 0.92)));
 			flex: 0 0 auto;
 			margin: 0 8px;
 			min-width: 0;
@@ -197,7 +197,7 @@ function injectCinetraktSoundtrackCardStyles() {
 		}
 
 		.cinetrakt-soundtrack-artist {
-			color: rgba(255, 255, 255, 0.62);
+			color: var(--color-text-secondary, var(--color-foreground, rgba(255, 255, 255, 0.62)));
 			font-size: 12px;
 			font-weight: 400;
 			line-height: 1.35;

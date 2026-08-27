@@ -4,8 +4,10 @@
 	const CINETRAKT_POSTER_TOP_REDUCTION = 24;
 	const CINETRAKT_POSTER_BOTTOM_SAFETY = 12;
 	const CINETRAKT_POSTER_SIDE_GAP = 16;
+	const CINETRAKT_CONTEXTUAL_PAIR_GAP = 16;
 	const {
 		canUseStickyLayout,
+		getRightListInnerWidth,
 		getViewportWidth,
 	} = globalThis.CineTraktPosterLayoutUtils;
 	let cinetraktStickyPosterState = null;
@@ -26,11 +28,20 @@ function injectWatchOnStremioPosterSizeStyles() {
 			[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready {
 			grid-template-columns:
 				minmax(0, 1fr)
-				minmax(220px, 320px) !important;
+				var(--ni-480) !important;
 			width: 100% !important;
 			max-width: 100% !important;
 			margin-left: 0 !important;
 			align-items: start !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.trakt-summary-container.watch-on-stremio-poster-size-ready.cinetrakt-contextual-pair-ready,
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			[class*="trakt-summary-container"].watch-on-stremio-poster-size-ready.cinetrakt-contextual-pair-ready {
+			grid-template-columns:
+				minmax(0, 1fr)
+				calc(var(--ni-320) + var(--ni-480) + var(--gap-m, 16px)) !important;
 		}
 
 		html.cinetrakt-poster-layout-enabled,
@@ -52,7 +63,7 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			main.cinetrakt-sticky-poster-detail-page {
 			padding-left: var(--watch-on-stremio-sticky-content-left) !important;
-			padding-right: 24px !important;
+			padding-right: 12px !important;
 		}
 
 		main.cinetrakt-sticky-poster-detail-page > * {
@@ -225,7 +236,59 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			.watch-on-stremio-poster-size-ready [class*="trakt-summary-contextual-content"] {
 			grid-column: 2 !important;
+			width: var(--ni-480) !important;
+			max-width: var(--ni-480) !important;
 			min-width: 0 !important;
+		}
+
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready.cinetrakt-contextual-pair-ready
+			.trakt-summary-contextual-content,
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready.cinetrakt-contextual-pair-ready
+			[class*="trakt-summary-contextual-content"] {
+			width: calc(var(--ni-320) + var(--ni-480) + var(--gap-m, 16px)) !important;
+			max-width: calc(var(--ni-320) + var(--ni-480) + var(--gap-m, 16px)) !important;
+		}
+
+		.cinetrakt-sentiment-trivia-row {
+			box-sizing: border-box !important;
+			display: grid !important;
+			grid-template-columns: var(--ni-320) var(--ni-480) !important;
+			align-items: start !important;
+			gap: var(--gap-m, 16px) !important;
+			width: calc(var(--ni-320) + var(--ni-480) + var(--gap-m, 16px)) !important;
+			max-width: none !important;
+			min-width: calc(var(--ni-320) + var(--ni-480) + var(--gap-m, 16px)) !important;
+			margin-top: var(--gap-m, 16px) !important;
+			padding: 0 !important;
+		}
+
+		.cinetrakt-sentiment-trivia-row > .cinetrakt-summary-sentiment {
+			box-sizing: border-box !important;
+			width: var(--ni-320) !important;
+			max-width: var(--ni-320) !important;
+			min-width: var(--ni-320) !important;
+			margin: 0 !important;
+			padding-inline: 0 !important;
+		}
+
+		.cinetrakt-sentiment-trivia-row > .cinetrakt-summary-trivia {
+			box-sizing: border-box !important;
+			width: var(--ni-480) !important;
+			max-width: var(--ni-480) !important;
+			min-width: var(--ni-480) !important;
+			margin: 8px 0 0 !important;
+			padding-inline: 0 !important;
+		}
+
+		.cinetrakt-summary-trivia {
+			box-sizing: border-box !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			min-width: 0 !important;
+			margin-top: var(--gap-m, 16px) !important;
+			padding-inline: 0 !important;
 		}
 
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
@@ -237,15 +300,26 @@ function injectWatchOnStremioPosterSizeStyles() {
 			min-width: 0 !important;
 		}
 
+		/* Le padding gauche natif réaligne le contenu après le décalage de la
+		   section. Le bord droit n'en reprend pas un second : toutes les listes
+		   terminent ainsi sur la même marge que le résumé, sans carte tronquée. */
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.cinetrakt-sticky-right-section .section-list-horizontal-scroll {
+			box-sizing: border-box !important;
+			width: 100% !important;
+			max-width: 100% !important;
+			padding-inline-end: 0 !important;
+		}
+
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			.cinetrakt-sticky-right-footer {
 			box-sizing: border-box !important;
 			margin-left: var(--watch-on-stremio-sticky-content-left) !important;
-			width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 24px) !important;
-			max-width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 24px) !important;
+			width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 12px) !important;
+			max-width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 12px) !important;
 			min-width: 0 !important;
 			padding-left: 48px !important;
-			padding-right: 24px !important;
+			padding-right: 12px !important;
 		}
 
 		.cinetrakt-sticky-right-footer .trakt-footer-content,
@@ -333,6 +407,130 @@ function attachCinetraktStickyPosterControls(state) {
 	state.rail.appendChild(controls);
 }
 
+function findCinetraktSectionByTitle(root, labels) {
+	if (!root) return null;
+	const normalizedLabels = new Set(labels.map((label) => label.toLowerCase()));
+	const title = [...root.querySelectorAll(
+		'h1, h2, h3, h4, .trakt-list-title, .trakt-list-inset-title, [class*="section-title"]',
+	)].find((candidate) => normalizedLabels.has(candidate.textContent?.trim().toLowerCase()));
+	if (!title) return null;
+
+	const section = title.closest('section');
+	if (section && root.contains(section)) return section;
+
+	let container = title;
+	while (container.parentElement && container.parentElement !== root) {
+		container = container.parentElement;
+	}
+	return container !== title ? container : title.parentElement;
+}
+
+function unwrapCinetraktSentimentTriviaRow(state) {
+	const row = state.sentimentTriviaRow;
+	if (!row) {
+		state.summaryContainer.classList.remove('cinetrakt-contextual-pair-ready');
+		return;
+	}
+
+	const sentimentSection = state.sentimentSection;
+	const triviaSection = state.triviaEntry?.element;
+	const parent = row.parentNode;
+	if (parent) {
+		if (sentimentSection && row.contains(sentimentSection)) {
+			parent.insertBefore(sentimentSection, row);
+		}
+		if (triviaSection && row.contains(triviaSection)) {
+			parent.insertBefore(triviaSection, row);
+		}
+	}
+
+	sentimentSection?.classList.remove('cinetrakt-summary-sentiment');
+	row.remove();
+	state.sentimentTriviaRow = null;
+	state.sentimentSection = null;
+	state.summaryContainer.classList.remove('cinetrakt-contextual-pair-ready');
+}
+
+function canPlaceCinetraktTriviaBesideSentiment(state, contextualContent, sentimentSection) {
+	const contextualWidth = contextualContent.getBoundingClientRect().width;
+	if (!state.contextualCardWidth && contextualWidth > 0) {
+		state.contextualCardWidth = contextualWidth;
+	}
+	const cardWidth = state.contextualCardWidth;
+	const sentimentWidth = sentimentSection.getBoundingClientRect().width;
+	const summaryWidth = state.summaryContainer.getBoundingClientRect().width;
+	if (!cardWidth || !sentimentWidth || !summaryWidth) return false;
+
+	// Chaque carte conserve sa largeur native actuelle. Une largeur complète de
+	// Trivia reste également réservée au résumé principal pour éviter tout écrasement.
+	const minimumWidth = sentimentWidth
+		+ (cardWidth * 2)
+		+ (CINETRAKT_CONTEXTUAL_PAIR_GAP * 2);
+	return summaryWidth >= minimumWidth;
+}
+
+function attachCinetraktTriviaBesideSentiment(state) {
+	const contextualContent = state.summaryContainer.querySelector(
+		'.trakt-summary-contextual-content, [class*="trakt-summary-contextual-content"]',
+	);
+	const sentimentSection = findCinetraktSectionByTitle(contextualContent, ['sentiment']);
+	if (!contextualContent || !sentimentSection?.parentNode) return;
+
+	let triviaSection = state.triviaEntry?.element;
+	if (triviaSection && !triviaSection.isConnected) {
+		state.triviaEntry.placeholder?.remove();
+		state.triviaEntry = null;
+		triviaSection = null;
+	}
+	if (!triviaSection) {
+		triviaSection = findCinetraktSectionByTitle(state.mainContent, ['trivia', 'anecdotes']);
+		if (!triviaSection || contextualContent.contains(triviaSection)) return;
+		state.triviaEntry = moveCinetraktElementWithPlaceholder(
+			triviaSection,
+			'CineTrakt original Trivia position',
+		);
+	}
+
+	triviaSection.classList.remove('cinetrakt-sticky-right-section');
+	state.sectionElements?.delete(triviaSection);
+	triviaSection.classList.add('cinetrakt-summary-trivia');
+
+	if (!canPlaceCinetraktTriviaBesideSentiment(state, contextualContent, sentimentSection)) {
+		unwrapCinetraktSentimentTriviaRow(state);
+		if (sentimentSection.nextElementSibling !== triviaSection) {
+			sentimentSection.insertAdjacentElement('afterend', triviaSection);
+		}
+		return;
+	}
+
+	let row = state.sentimentTriviaRow;
+	if (!row?.isConnected) {
+		row?.remove();
+		row = document.createElement('div');
+		row.className = 'cinetrakt-sentiment-trivia-row';
+		sentimentSection.parentNode.insertBefore(row, sentimentSection);
+		state.sentimentTriviaRow = row;
+	}
+	state.sentimentSection = sentimentSection;
+	sentimentSection.classList.add('cinetrakt-summary-sentiment');
+	row.append(sentimentSection, triviaSection);
+	state.summaryContainer.classList.add('cinetrakt-contextual-pair-ready');
+}
+
+function restoreCinetraktTriviaToNativeFlow(state) {
+	unwrapCinetraktSentimentTriviaRow(state);
+	const triviaSection = state.triviaEntry?.element;
+	if (!triviaSection) return;
+
+	triviaSection.classList.remove('cinetrakt-summary-trivia');
+	restoreCinetraktMovedElement(state.triviaEntry);
+	state.triviaEntry = null;
+	if (triviaSection.isConnected) {
+		triviaSection.classList.add('cinetrakt-sticky-right-section');
+		state.sectionElements?.add(triviaSection);
+	}
+}
+
 function hasCinetraktVisibleBorderRadius(value) {
 	return String(value || '')
 		.split(/[\s/]+/)
@@ -386,7 +584,7 @@ function markCinetraktResponsiveRightContent(state) {
 		section.classList.add('cinetrakt-sticky-right-section');
 		state.sectionElements.add(section);
 	});
-	const footer = document.querySelector('footer, [role="contentinfo"]');
+	const footer = document.querySelector('footer.trakt-footer, [role="contentinfo"]');
 	if (footer) {
 		state.footer = footer;
 		footer.classList.add('cinetrakt-sticky-right-footer');
@@ -411,7 +609,9 @@ function applyCinetraktStickyPosterDimensions(state, width, height) {
 		posterSideGap,
 	} = state;
 	const contentLeft = summaryLeft + width + posterSideGap;
+	const listInnerWidth = getRightListInnerWidth(getCinetraktViewportWidth(), contentLeft);
 
+	document.documentElement.style.setProperty('--list-inner-width', `${listInnerWidth}px`, 'important');
 	summaryContainer.style.setProperty('--summary-poster-width', `${width}px`, 'important');
 	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-width', `${width}px`);
 	summaryContainer.style.setProperty('--watch-on-stremio-summary-poster-height', `${height}px`);
@@ -427,6 +627,7 @@ function applyCinetraktStickyPosterDimensions(state, width, height) {
 function clearCinetraktStickyPosterDimensions(state) {
 	window.cancelAnimationFrame(state.boundsCorrectionFrame);
 	state.boundsCorrectionFrame = null;
+	document.documentElement.style.removeProperty('--list-inner-width');
 	state.mainContent.style.removeProperty('--watch-on-stremio-sticky-content-left');
 	state.footer?.style.removeProperty('--watch-on-stremio-sticky-content-left');
 
@@ -603,7 +804,11 @@ function updateCinetraktStickyPosterLayout(state) {
 	});
 	const useStickyLayout = canUseStickyLayout(metrics.viewportWidth, metrics.contentLeft);
 	setCinetraktPosterLayoutMode(state, useStickyLayout);
-	if (!useStickyLayout) return;
+	if (!useStickyLayout) {
+		restoreCinetraktTriviaToNativeFlow(state);
+		return;
+	}
+	attachCinetraktTriviaBesideSentiment(state);
 
 	state.summaryLeft = metrics.summaryLeft;
 	state.posterTop = metrics.posterTop;
@@ -716,6 +921,10 @@ function setupWatchOnStremioPosterSize() {
 		posterImage,
 		posterEntry,
 		controlsEntry: null,
+		triviaEntry: null,
+		sentimentTriviaRow: null,
+		sentimentSection: null,
+		contextualCardWidth: 0,
 		rail,
 		mainContent,
 		sectionElements: new Set(),
@@ -739,6 +948,7 @@ function cleanupWatchOnStremioPosterSize() {
 		'cinetrakt-poster-layout-enabled',
 		'cinetrakt-poster-layout-compact',
 	);
+	document.documentElement.style.removeProperty('--list-inner-width');
 	const state = cinetraktStickyPosterState;
 	window.cancelAnimationFrame(state?.boundsCorrectionFrame);
 	const summaryContainer = state?.summaryContainer
@@ -748,6 +958,7 @@ function cleanupWatchOnStremioPosterSize() {
 	const posterStage = state?.posterStage;
 
 	state?.controlsEntry?.element?.classList.remove('cinetrakt-sticky-poster-controls');
+	if (state) restoreCinetraktTriviaToNativeFlow(state);
 	restoreCinetraktMovedElement(state?.controlsEntry);
 	restoreCinetraktMovedElement(state?.posterEntry);
 	state?.rail?.remove();
@@ -761,6 +972,7 @@ function cleanupWatchOnStremioPosterSize() {
 	summaryContainer?.classList.remove(
 		'watch-on-stremio-poster-size-ready',
 		'cinetrakt-poster-layout-compact',
+		'cinetrakt-contextual-pair-ready',
 	);
 	posterContainer?.classList.remove('watch-on-stremio-summary-poster-sized');
 	for (const element of [summaryContainer, posterContainer, posterStage]) {
