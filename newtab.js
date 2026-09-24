@@ -148,7 +148,11 @@
 		try {
 			await settings.ready;
 			tmdbCredential = settings.getTmdbCredential();
-			if (!tmdbCredential) throw new Error('TMDB credential missing.');
+			if (!settings.isEnabled('newTabMovieDiscovery') || !tmdbCredential) {
+				loadingState.hidden = true;
+				mediaView.setAttribute('aria-busy', 'false');
+				return;
+			}
 			await renderMedia(await findRandomMedia());
 		} catch (error) {
 			showError(error);

@@ -85,6 +85,8 @@ test('Spotify bridge protocol loads in both communicating frames', () => {
 	const spotifyScripts = getContentScripts('https://open.spotify.com/embed*');
 	assert.ok(traktScripts.indexOf('spotify-protocol.js') < traktScripts.indexOf('trakt-soundtrack.js'));
 	assert.ok(spotifyScripts.indexOf('spotify-protocol.js') < spotifyScripts.indexOf('spotify-embed.js'));
+	assert.match(traktSoundtrackSource, /if \(!cinetraktReadySpotifyEmbeds\.has\(iframe\)\) return false/);
+	assert.match(traktSoundtrackSource, /Date\.now\(\) < cinetraktSoundtrackState\.discoveryDeadline/);
 });
 
 test('site entry points only coordinate their feature modules', () => {
@@ -150,8 +152,8 @@ test('poster integration preserves native Trakt href values', () => {
 	assert.match(traktPosterSource, /\.cinetrakt-sticky-right-section \.section-list-horizontal-scroll/);
 	assert.match(traktPosterSource, /padding-inline-end:\s*0\s*!important/);
 	assert.match(traktPosterSource, /const CINETRAKT_POSTER_SIDE_GAP = 16/);
-	assert.match(traktPosterSource, /\.cinetrakt-soundtrack-card:not\(\[hidden\]\)/);
-	assert.match(traktPosterSource, /sidebarVisualRight \+ CINETRAKT_POSTER_SIDE_GAP/);
+	assert.doesNotMatch(traktPosterSource, /soundtrackCardRect|sidebarVisualRight/);
+	assert.match(traktPosterSource, /sidebarRight \+ CINETRAKT_POSTER_SIDE_GAP/);
 	assert.match(traktPosterSource, /const contentLeft = summaryLeft \+ width \+ CINETRAKT_POSTER_SIDE_GAP/);
 	assert.match(traktPosterSource, /posterSideGap:\s*CINETRAKT_POSTER_SIDE_GAP/);
 	assert.doesNotMatch(traktPosterSource, /summaryLeft \+ width \+ 32/);
@@ -162,7 +164,7 @@ test('poster integration preserves native Trakt href values', () => {
 	assert.doesNotMatch(traktPosterSource, /syncCinetraktStablePosterImage/);
 	assert.doesNotMatch(traktPosterSource, /object-fit:\s*contain\s*!important/);
 	assert.doesNotMatch(traktPosterSource, /filter:\s*brightness/);
-	assert.match(traktPosterSource, /\.trakt-summary-poster\.has-active-overlay:hover img\s*\{[\s\S]*?filter:\s*none\s*!important/);
+	assert.match(traktPosterSource, /\.trakt-summary-poster\.has-active-overlay img,[\s\S]*?\.trakt-summary-poster\.has-active-overlay:hover img\s*\{[\s\S]*?filter:\s*none\s*!important[\s\S]*?transition:\s*none\s*!important/);
 	assert.doesNotMatch(traktPosterSource, /rotate[XY]\(/);
 	assert.doesNotMatch(traktPosterSource, /scale3d\(/);
 	assert.doesNotMatch(traktPosterSource, /addEventListener\('pointermove'/);
@@ -219,6 +221,11 @@ test('poster layout places native Trivia beside Sentiment without compressing ei
 	assert.match(traktPosterSource, /sentimentSection\.insertAdjacentElement\('afterend', triviaSection\)/);
 	assert.match(traktPosterSource, /moveCinetraktElementWithPlaceholder\([\s\S]*?'CineTrakt original Trivia position'/);
 	assert.match(traktPosterSource, /function restoreCinetraktTriviaToNativeFlow\(state\)/);
+	assert.match(traktPosterSource, /function discardCinetraktTriviaFromPreviousRoute\(state\)/);
+	assert.match(traktPosterSource, /triviaEntry\.element\?\.remove\(\)/);
+	assert.match(traktPosterSource, /triviaEntry\.placeholder\?\.remove\(\)/);
+	assert.match(traktPosterSource, /cleanupWatchOnStremioPosterSize\(\{ discardMovedTrivia: true \}\)/);
+	assert.match(traktPosterSource, /function cleanupWatchOnStremioPosterSize\(\{ discardMovedTrivia = false \} = \{\}\)/);
 	assert.match(traktPosterSource, /function unwrapCinetraktSentimentTriviaRow\(state\)/);
 	assert.match(traktPosterSource, /if \(!useStickyLayout\) \{[\s\S]*?restoreCinetraktTriviaToNativeFlow\(state\)/);
 	assert.match(traktPosterSource, /restoreCinetraktMovedElement\(state\.triviaEntry\)/);
@@ -241,7 +248,7 @@ test('moved Trivia keeps the native section rhythm and soundtrack text follows t
 
 test('detail poster uses a clean Stremio interaction without the native promo overlay', () => {
 	assert.match(traktPosterSource, /\.trakt-summary-poster-overlay\s*\{[\s\S]*?display:\s*none\s*!important/);
-	assert.match(traktPosterSource, /\.trakt-summary-poster\s*>\s*a\s*\{[\s\S]*?pointer-events:\s*none\s*!important/);
+	assert.match(traktPosterSource, /\.trakt-summary-poster\s*>\s*a\s*\{[\s\S]*?pointer-events:\s*auto\s*!important/);
 	assert.match(traktPosterSource, /data-cinetrakt-stremio-target="true"/);
 	assert.match(traktStremioSource, /target\.dataset\.cinetraktStremioTarget\s*=\s*'true'/);
 	assert.match(traktStremioSource, /event\.key\s*!==\s*'Enter'\s*&&\s*event\.key\s*!==\s*' '/);
@@ -253,9 +260,17 @@ test('detail poster uses a clean Stremio interaction without the native promo ov
 	assert.match(traktStremioSource, /isCinetraktPointerOutsidePosterImage\(element, event\)/);
 	assert.match(traktStremioSource, /event\.clientY > rect\.bottom/);
 	assert.match(traktStremioSource, /cinetraktStremioActive !== 'true'/);
-	assert.match(traktStremioSource, /if \(stickyPosterStage\) return \[stickyPosterStage\]/);
+	assert.match(traktStremioSource, /const posterImage = posterSurface\?\.querySelector\('img'\)/);
+	assert.match(traktStremioSource, /if \(posterImage\) return \[posterImage\]/);
+	assert.match(traktStremioSource, /\|\| stickyPosterStage/);
 	assert.match(traktStremioSource, /target\.dataset\.cinetraktStremioActive = 'false'/);
 	assert.match(traktStremioSource, /target\.dataset\.cinetraktStremioActive = 'true'/);
+	assert.match(traktStremioSource, /function resetCinetraktDetailPosterTargets\(\)/);
+	assert.match(traktStremioSource, /target\.removeAttribute\('data-stremio-url'\)/);
+	assert.match(traktStremioSource, /pendingDetailPosterResolution = null;[\s\S]*?resetCinetraktDetailPosterTargets\(\)/);
+	assert.match(traktStremioSource, /function isCinetraktPrimaryPosterLink\(element, interactive\)/);
+	assert.match(traktStremioSource, /posterImage\.closest\('a\[href\]'\) === interactive/);
+	assert.match(traktStremioSource, /&& !isCinetraktPrimaryPosterLink\(element, nativeInteractive\)/);
 	assert.match(traktStremioSource, /bindCinetraktPendingDetailPosterTargets\(\)/);
 	assert.match(traktStremioSource, /resolvePendingDetailPosterStremioUrl\(\)/);
 	assert.match(traktStremioSource, /getTraktMediaIdFromDetailPoster\(pending\.media\.kind\)/);

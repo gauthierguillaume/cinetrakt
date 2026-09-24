@@ -48,6 +48,12 @@ function getCinetraktPosterInteractionImage(element) {
 	return element.querySelector?.('img') || null;
 }
 
+function isCinetraktPrimaryPosterLink(element, interactive) {
+	if (!interactive?.matches?.('a[href]')) return false;
+	const posterImage = getCinetraktPosterInteractionImage(element);
+	return Boolean(posterImage && posterImage.closest('a[href]') === interactive);
+}
+
 function isCinetraktPointerOutsidePosterImage(element, event) {
 	if (!(event instanceof MouseEvent)) return false;
 
@@ -74,6 +80,7 @@ function shouldPreserveNativePosterInteraction(element, event) {
 		nativeInteractive
 		&& nativeInteractive !== element
 		&& element.contains(nativeInteractive)
+		&& !isCinetraktPrimaryPosterLink(element, nativeInteractive)
 	) {
 		return true;
 	}
@@ -130,14 +137,30 @@ function bindCinetraktStremioOpenHandlers(element, getStremioUrl) {
 }
 
 function getCinetraktDetailPosterTargets() {
-	const stickyPosterStage = document.querySelector('.cinetrakt-sticky-poster-stage');
-	if (stickyPosterStage) return [stickyPosterStage];
-
 	const posterSurface = document.querySelector('.trakt-summary-poster');
+	const stickyPosterStage = document.querySelector('.cinetrakt-sticky-poster-stage');
+	const posterImage = posterSurface?.querySelector('img')
+		|| stickyPosterStage?.querySelector('.trakt-summary-poster img, img');
+	if (posterImage) return [posterImage];
+
 	const nativePosterTarget = posterSurface?.querySelector(':scope > a, a:has(> img)')
 		|| posterSurface?.querySelector('a')
-		|| posterSurface;
+		|| posterSurface
+		|| stickyPosterStage;
 	return nativePosterTarget ? [nativePosterTarget] : [];
+}
+
+function resetCinetraktDetailPosterTargets() {
+	document.querySelectorAll('[data-watch-on-stremio-click-fixed="true"]').forEach((target) => {
+		target.dataset.cinetraktStremioActive = 'false';
+		target.removeAttribute('data-cinetrakt-stremio-target');
+		target.removeAttribute('data-stremio-url');
+		if (target.classList.contains('cinetrakt-sticky-poster-stage')) {
+			target.removeAttribute('role');
+			target.removeAttribute('aria-label');
+			target.removeAttribute('tabindex');
+		}
+	});
 }
 
 function bindCinetraktDetailPosterTargets(stremioUrl) {
@@ -145,15 +168,7 @@ function bindCinetraktDetailPosterTargets(stremioUrl) {
 	currentDetailPosterStremioUrl = stremioUrl;
 	const targets = getCinetraktDetailPosterTargets();
 
-	document.querySelectorAll('[data-watch-on-stremio-click-fixed="true"]').forEach((target) => {
-		target.dataset.cinetraktStremioActive = 'false';
-		target.removeAttribute('data-cinetrakt-stremio-target');
-		if (target.classList.contains('cinetrakt-sticky-poster-stage')) {
-			target.removeAttribute('role');
-			target.removeAttribute('aria-label');
-			target.removeAttribute('tabindex');
-		}
-	});
+	resetCinetraktDetailPosterTargets();
 
 	targets.forEach((target) => {
 		target.dataset.watchOnStremioClickFixed = 'true';
@@ -349,6 +364,7 @@ function insertStremioButtonTraktV3() {
 	if (detailMedia && pendingDetailPosterMedia?.media.pathname !== detailPathname) {
 		currentDetailPosterStremioUrl = '';
 		pendingDetailPosterResolution = null;
+		resetCinetraktDetailPosterTargets();
 	}
 	pendingDetailPosterMedia = detailMedia ? { media: detailMedia, type } : null;
 	bindCinetraktPendingDetailPosterTargets();

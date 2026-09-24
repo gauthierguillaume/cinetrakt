@@ -168,7 +168,7 @@ function createStremioPopup(url, layout, sender, sendResponse) {
 		chrome.windows.create(
 			{
 				url,
-				type: "popup",
+				type: "normal",
 				left: layout.popup.left,
 				top: layout.popup.top,
 				width: layout.popup.width,
@@ -434,50 +434,4 @@ chrome.windows.onRemoved.addListener((windowId) => {
 	getSavedImdbRatingsWindowId((savedWindowId) => {
 		if (savedWindowId === windowId) forgetImdbRatingsWindowId();
 	});
-});
-
-const cinetraktRedirectedNewTabIds = new Set();
-
-function isNativeChromeNewTabUrl(url) {
-	return /^chrome:\/\/(newtab|new-tab-page)\/?$/i.test(String(url || ""));
-}
-
-async function maybeOpenCineTraktNewTab(tab) {
-	if (!tab?.id || cinetraktRedirectedNewTabIds.has(tab.id)) return;
-	const initialUrl = tab.pendingUrl || tab.url;
-	if (initialUrl && !isNativeChromeNewTabUrl(initialUrl)) return;
-
-	await globalThis.CineTraktSettings.ready;
-	if (!globalThis.CineTraktSettings.isEnabled("newTabMovieDiscovery")) return;
-	if (!globalThis.CineTraktSettings.getTmdbCredential()) return;
-
-	if (!initialUrl) {
-		tab = await new Promise((resolve) => {
-			chrome.tabs.get(tab.id, (currentTab) => {
-				resolve(chrome.runtime.lastError ? null : currentTab);
-			});
-		});
-	}
-	if (!isNativeChromeNewTabUrl(tab?.pendingUrl || tab?.url)) return;
-
-	cinetraktRedirectedNewTabIds.add(tab.id);
-	chrome.tabs.update(tab.id, { url: chrome.runtime.getURL("newtab.html") }, () => {
-		if (chrome.runtime.lastError) cinetraktRedirectedNewTabIds.delete(tab.id);
-	});
-}
-
-chrome.tabs.onCreated.addListener((tab) => {
-	void maybeOpenCineTraktNewTab(tab);
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-	if (!isNativeChromeNewTabUrl(changeInfo.url)) {
-		if (changeInfo.url) cinetraktRedirectedNewTabIds.delete(tabId);
-		return;
-	}
-	void maybeOpenCineTraktNewTab({ ...tab, id: tabId, url: changeInfo.url });
-});
-
-chrome.tabs.onRemoved.addListener((tabId) => {
-	cinetraktRedirectedNewTabIds.delete(tabId);
 });

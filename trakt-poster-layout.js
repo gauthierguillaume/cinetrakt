@@ -142,9 +142,14 @@ function injectWatchOnStremioPosterSizeStyles() {
 		   ni l'image ni sa géométrie ; seul le curseur indique qu'il est cliquable. */
 		html.cinetrakt-poster-layout-enabled
 			.watch-on-stremio-summary-poster-sized
+			.trakt-summary-poster.has-active-overlay img,
+		html.cinetrakt-poster-layout-enabled
+			.watch-on-stremio-summary-poster-sized
 			.trakt-summary-poster.has-active-overlay:hover img {
 			border: 0 solid transparent !important;
 			filter: none !important;
+			transform: none !important;
+			transition: none !important;
 		}
 
 		.cinetrakt-sticky-poster-controls {
@@ -219,7 +224,7 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled
 			.watch-on-stremio-summary-poster-sized
 			.trakt-summary-poster > a {
-			pointer-events: none !important;
+			pointer-events: auto !important;
 		}
 
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
@@ -531,6 +536,21 @@ function restoreCinetraktTriviaToNativeFlow(state) {
 	}
 }
 
+function discardCinetraktTriviaFromPreviousRoute(state) {
+	unwrapCinetraktSentimentTriviaRow(state);
+	const triviaEntry = state.triviaEntry;
+	if (!triviaEntry) return;
+
+	// During an internal Trakt navigation the old native parent can stay connected
+	// while its content is being recycled. Restoring Trivia there would make the
+	// previous title's card part of the new page, where it can then be moved again.
+	triviaEntry.element?.classList.remove('cinetrakt-summary-trivia');
+	triviaEntry.element?.remove();
+	triviaEntry.placeholder?.remove();
+	state.sectionElements?.delete(triviaEntry.element);
+	state.triviaEntry = null;
+}
+
 function hasCinetraktVisibleBorderRadius(value) {
 	return String(value || '')
 		.split(/[\s/]+/)
@@ -711,14 +731,9 @@ function getCinetraktStickyPosterMetrics({
 		? posterAspectRatio
 		: naturalImageRatio;
 	const sidebarRect = document.querySelector('.trakt-side-navbar')?.getBoundingClientRect();
-	const soundtrackCardRect = document.querySelector(
-		'.cinetrakt-soundtrack-card:not([hidden])',
-	)?.getBoundingClientRect();
-	const sidebarVisualRight = soundtrackCardRect?.width > 0
-		? soundtrackCardRect.right
-		: sidebarRect?.right;
-	const summaryLeft = Number.isFinite(sidebarVisualRight) && sidebarVisualRight > 0
-		? Math.max(0, Math.round(sidebarVisualRight + CINETRAKT_POSTER_SIDE_GAP))
+	const sidebarRight = sidebarRect?.right;
+	const summaryLeft = Number.isFinite(sidebarRight) && sidebarRight > 0
+		? Math.max(0, Math.round(sidebarRight + CINETRAKT_POSTER_SIDE_GAP))
 		: summaryLeftFallback;
 	const resolvedPosterTop = Math.max(0, posterTop);
 	const posterBottomSafety = CINETRAKT_POSTER_BOTTOM_SAFETY;
@@ -858,7 +873,7 @@ function setupWatchOnStremioPosterSize() {
 		&& (cinetraktStickyPosterState.routeKey !== routeKey
 			|| !cinetraktStickyPosterState.summaryContainer?.isConnected
 			|| !cinetraktStickyPosterState.rail?.isConnected)) {
-		cleanupWatchOnStremioPosterSize();
+		cleanupWatchOnStremioPosterSize({ discardMovedTrivia: true });
 	}
 	if (cinetraktStickyPosterState) {
 		updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
@@ -941,7 +956,7 @@ function setupWatchOnStremioPosterSize() {
 	updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
 }
 
-function cleanupWatchOnStremioPosterSize() {
+function cleanupWatchOnStremioPosterSize({ discardMovedTrivia = false } = {}) {
 	window.clearTimeout(cinetraktStickyPosterResizeTimer);
 	cinetraktStickyPosterResizeTimer = null;
 	document.documentElement.classList.remove(
@@ -958,7 +973,10 @@ function cleanupWatchOnStremioPosterSize() {
 	const posterStage = state?.posterStage;
 
 	state?.controlsEntry?.element?.classList.remove('cinetrakt-sticky-poster-controls');
-	if (state) restoreCinetraktTriviaToNativeFlow(state);
+	if (state) {
+		if (discardMovedTrivia) discardCinetraktTriviaFromPreviousRoute(state);
+		else restoreCinetraktTriviaToNativeFlow(state);
+	}
 	restoreCinetraktMovedElement(state?.controlsEntry);
 	restoreCinetraktMovedElement(state?.posterEntry);
 	state?.rail?.remove();

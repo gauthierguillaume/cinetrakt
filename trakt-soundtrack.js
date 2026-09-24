@@ -397,15 +397,22 @@ function scheduleCinetraktSoundtrackAutoplayAttempt(delay = CINETRAKT_SOUNDTRACK
 	}, delay);
 }
 
-function requestCinetraktSpotifyEmbedPlayback(track) {
+function getCinetraktSpotifyEmbed(track) {
 	const section = track?.row.closest('section.trakt-soundtrack-section');
-	const iframe = section?.querySelector('iframe[src*="open.spotify.com/embed/"]');
+	return section?.querySelector('iframe[src*="open.spotify.com/embed/"]') || null;
+}
+
+function requestCinetraktSpotifyEmbedPlayback(track) {
+	const iframe = getCinetraktSpotifyEmbed(track);
 	if (!iframe?.contentWindow) return false;
 
 	const allowedFeatures = new Set((iframe.getAttribute('allow') || '').split(';').map((value) => value.trim()).filter(Boolean));
 	allowedFeatures.add('autoplay');
 	iframe.setAttribute('allow', [...allowedFeatures].join('; '));
-	if (!cinetraktReadySpotifyEmbeds.has(iframe)) return true;
+	// L'iframe existe parfois plusieurs secondes avant que son bridge Spotify
+	// soit réellement prêt. Ne pas prétendre qu'une requête a été envoyée :
+	// l'appelant peut ainsi retenter le contrôle Trakt natif pendant ce délai.
+	if (!cinetraktReadySpotifyEmbeds.has(iframe)) return false;
 
 	iframe.contentWindow.postMessage({ type: MESSAGE_TYPES.PLAY_REQUEST }, SPOTIFY_ORIGIN);
 	return true;
@@ -493,6 +500,18 @@ function attemptCinetraktSoundtrackAutoplay() {
 
 	if (isCinetraktSoundtrackControlPlaying(selected.control)) {
 		completeCinetraktSoundtrackAutoplay('playing');
+		return;
+	}
+
+	const spotifyEmbed = getCinetraktSpotifyEmbed(selected);
+	const spotifyEmbedReady = spotifyEmbed && cinetraktReadySpotifyEmbeds.has(spotifyEmbed);
+	if (cinetraktSoundtrackState.autoplayAttemptCount >= CINETRAKT_SOUNDTRACK_AUTOPLAY_MAX_ATTEMPTS
+		&& !spotifyEmbedReady
+		&& Date.now() < cinetraktSoundtrackState.discoveryDeadline) {
+		// Les clics initiaux ont déjà demandé à Trakt de monter le lecteur. Une fois
+		// ce quota atteint, attendre son signal READY évite de marteler le bouton tout
+		// en laissant l'autoplay reprendre si Spotify a simplement chargé lentement.
+		scheduleCinetraktSoundtrackAutoplayAttempt();
 		return;
 	}
 
