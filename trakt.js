@@ -32,10 +32,11 @@
 		customizations.update({
 			collectionEnabled: isFeatureEnabled('traktCollectionCard'),
 			navigationCleanupEnabled: isFeatureEnabled('traktNavigationCleanup'),
+			hideReactionsEnabled: isFeatureEnabled('traktHideReactions'),
 		});
 
-		if (!pageRelevant) return;
 		ratings.setColorsEnabled(isFeatureEnabled('traktRatingColors'));
+		if (!pageRelevant) return;
 		ratings.setControlsEnabled({
 			toggleEnabled: isFeatureEnabled('traktRatingsToggle'),
 			popupEnabled: isFeatureEnabled('imdbEpisodeRatingsPopup'),

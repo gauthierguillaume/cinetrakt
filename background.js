@@ -101,13 +101,13 @@ function safeWindowUpdate(windowId, updateInfo, callback) {
 		return;
 	}
 
-	chrome.windows.update(windowId, updateInfo, () => {
+	chrome.windows.update(windowId, updateInfo, (updatedWindow) => {
 		const error = readLastError();
 		if (error) {
 			callback?.(false, error);
 			return;
 		}
-		callback?.(true, null);
+		callback?.(true, null, updatedWindow);
 	});
 }
 
@@ -148,8 +148,8 @@ function normalizeWindowFast(windowId, bounds, callback) {
 		}
 
 		setTimeout(() => {
-			safeWindowUpdate(windowId, { ...wanted, state: "normal" }, (boundsApplied) => {
-				callback?.(boundsApplied);
+			safeWindowUpdate(windowId, { ...wanted, state: "normal" }, (boundsApplied, error, updatedWindow) => {
+				callback?.(boundsApplied, updatedWindow);
 			});
 		}, 0);
 	});
@@ -162,14 +162,11 @@ function focusStremioWindow(windowId, sendResponse) {
 }
 
 function createStremioPopup(url, layout, sender, sendResponse) {
-	// On cale Trakt avant de créer Stremio : sinon Chrome affiche brièvement
-	// les fenêtres à l'ancienne taille puis les recolle une seconde plus tard.
-	normalizeWindowFast(sender?.tab?.windowId, layout.trakt, () => {
 		chrome.windows.create(
 			{
 				url,
 				type: "normal",
-				left: layout.popup.left,
+				// Let the browser place the minimum-size window on screen first.
 				top: layout.popup.top,
 				width: layout.popup.width,
 				height: layout.popup.height,
@@ -182,14 +179,14 @@ function createStremioPopup(url, layout, sender, sendResponse) {
 				}
 
 				saveWindowId(newWindow.id);
-
-				// Petite passe de sécurité : normalement la fenêtre est déjà créée au bon endroit.
-				normalizeWindowFast(newWindow.id, layout.popup, () => {
-					focusStremioWindow(newWindow.id, sendResponse);
+				const fittedLayout = getPopupLayout(layout.displayBounds, newWindow.width);
+				normalizeWindowFast(sender?.tab?.windowId, fittedLayout.trakt, () => {
+					normalizeWindowFast(newWindow.id, fittedLayout.popup, () => {
+						focusStremioWindow(newWindow.id, sendResponse);
+					});
 				});
 			}
 		);
-	});
 }
 
 function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendResponse) {
@@ -230,7 +227,21 @@ function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendRespo
 		});
 	};
 
-	openAfterPreLayout();
+	// Windows/Vivaldi decide the minimum outer width. Measure it rather than
+	// reserving a guessed 560-610 pixels, then give the remaining space to Trakt.
+	normalizeWindowFast(existingWindow.id, {
+		...layout.popup, left: existingWindow.left, width: 1,
+	}, (ok, minimumWindow) => {
+		if (!ok) {
+			sendResponse({ ok: false });
+			return;
+		}
+		layout = {
+			...getPopupLayout(layout.displayBounds, minimumWindow?.width || existingWindow.width),
+			displayBounds: layout.displayBounds,
+		};
+		openAfterPreLayout();
+	});
 }
 
 function openOrReuseStremioWindow(url, layout, sender, sendResponse) {
@@ -420,7 +431,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	}
 
 	getDisplayBoundsForSource(sender, message.screenBounds, (displayBounds) => {
-		const layout = getPopupLayout(displayBounds);
+		const layout = { ...getPopupLayout(displayBounds), displayBounds };
 		openOrReuseStremioWindow(message.url, layout, sender, sendResponse);
 	});
 

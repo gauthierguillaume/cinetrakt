@@ -6,7 +6,8 @@ html.cinetrakt-poster-layout-enabled {
 	);
 }
 
-html.cinetrakt-poster-layout-enabled .trakt-summary-container {
+html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+	.trakt-summary-container:not(.watch-on-stremio-poster-size-ready) {
 	--summary-poster-width: var(--cinetrakt-early-poster-width) !important;
 	grid-template-columns:
 		var(--cinetrakt-early-poster-width)
@@ -23,14 +24,15 @@ html.cinetrakt-poster-layout-enabled .trakt-summary-container {
 		);
 	}
 
-	html.cinetrakt-poster-layout-enabled .trakt-summary-container {
+	html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+		.trakt-summary-container:not(.watch-on-stremio-poster-size-ready) {
 		grid-template-columns:
 			var(--cinetrakt-early-poster-width)
 			minmax(0, 1fr) !important;
 	}
 
-	html.cinetrakt-poster-layout-enabled .trakt-summary-contextual-content,
-	html.cinetrakt-poster-layout-enabled [class*="trakt-summary-contextual-content"] {
+	html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+		.trakt-summary-container:not(.watch-on-stremio-poster-size-ready) .trakt-summary-contextual-content {
 		grid-column: 2 !important;
 	}
 }

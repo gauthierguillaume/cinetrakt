@@ -9,6 +9,7 @@ const {
 	getRightListInnerWidth,
 	getRightContentWidth,
 	getViewportWidth,
+	getStickyPosterSize,
 } = require('../poster-layout-utils.js');
 
 test('viewport measurements use the smallest positive browser value', () => {
@@ -27,8 +28,48 @@ test('sticky poster preserves enough width for Trakt responsive content', () => 
 	const contentLeft = viewportWidth - 12 - MIN_STICKY_RIGHT_CONTENT_WIDTH;
 
 	assert.equal(getRightContentWidth(viewportWidth, contentLeft), MIN_STICKY_RIGHT_CONTENT_WIDTH);
-	assert.equal(getRightListInnerWidth(viewportWidth, contentLeft), MIN_STICKY_RIGHT_CONTENT_WIDTH);
+	assert.equal(getRightListInnerWidth(viewportWidth, contentLeft), MIN_STICKY_RIGHT_CONTENT_WIDTH - 24);
 	assert.equal(canUseStickyLayout(viewportWidth, contentLeft), true);
 	assert.equal(canUseStickyLayout(viewportWidth, contentLeft + 1), false);
 	assert.equal(canUseStickyLayout(900, 100), false);
+});
+
+test('native card sizing leaves complete cards before the trailing list mask', () => {
+	for (const viewportWidth of [1280, 1440, 1660, 1899, 2293]) {
+		for (const sideInset of [16, 24, 32]) {
+			const contentLeft = 758;
+			const area = getRightContentWidth(viewportWidth, contentLeft);
+			const inner = getRightListInnerWidth(viewportWidth, contentLeft, sideInset);
+			for (const minimum of [120, 132, 200, 340]) {
+				const gap = 12;
+				const count = Math.max(1, Math.floor(inner / (minimum + gap)));
+				const cardWidth = Math.max(minimum, inner / count - gap);
+				const finalCardRight = count * cardWidth + (count - 1) * gap;
+				assert.ok(finalCardRight <= area - sideInset, 'last complete card must precede the mask');
+				assert.ok(finalCardRight + gap >= area - sideInset - 0.01, 'next card starts under the mask');
+				// Browser zoom rounds the carousel and individual cards separately.
+				// Include both that subpixel difference and the native hover outline.
+				for (const fractionalRemainder of [0, 0.5, 0.99]) {
+					const maskEdge = area + fractionalRemainder - sideInset - 4;
+					const outline = 8 / 3;
+					assert.ok(finalCardRight + outline < maskEdge, 'last visible hover outline stays complete');
+					assert.ok(finalCardRight + gap - outline > maskEdge, 'next hover outline stays hidden');
+				}
+			}
+		}
+	}
+});
+
+test('a 1440p split window keeps a full-height poster and stacks the right content', () => {
+	const size = getStickyPosterSize(1280, 208, 800, 2 / 3);
+	assert.equal(size.width, 533);
+	assert.ok(size.height >= 799);
+	assert.equal(canUseStickyLayout(1280, 208 + size.width + 16), true);
+});
+
+test('narrow desktop windows reduce the poster gradually while reserving readable content', () => {
+	const size = getStickyPosterSize(1100, 208, 800, 2 / 3);
+	assert.equal(size.width, 504);
+	assert.equal(size.height, 756);
+	assert.equal(getRightContentWidth(1100, 208 + size.width + 16), 360);
 });

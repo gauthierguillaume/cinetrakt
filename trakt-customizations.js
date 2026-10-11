@@ -8,6 +8,21 @@ let cinetraktCollectionPlacement = null;
 let cinetraktCollectionRenderProbe = null;
 let cinetraktCollectionProbeAttemptedRoute = '';
 
+function setCinetraktReactionsHidden(enabled) {
+	if (!document.getElementById('cinetrakt-hidden-reactions-style')) {
+		const style = document.createElement('style');
+		style.id = 'cinetrakt-hidden-reactions-style';
+		style.textContent = `
+			html.cinetrakt-hide-media-reactions .trakt-summary-container .trakt-summary-social-row .trakt-reactions-popover-trigger {
+				display: none !important;
+			}
+		`;
+		document.head.appendChild(style);
+	}
+	document.documentElement.classList.toggle('cinetrakt-hide-media-reactions',
+		Boolean(enabled) && /^\/(movies|shows)\/[^/]+\/?$/.test(window.location.pathname));
+}
+
 function injectCinetraktCollectionCardStyles() {
 	if (document.getElementById(CINETRAKT_COLLECTION_STYLE_ID)) return;
 
@@ -355,13 +370,15 @@ function hideCinetraktUnusedTraktNavigationEntries() {
 	}
 
 	const api = Object.freeze({
-		update({ collectionEnabled, navigationCleanupEnabled }) {
+		update({ collectionEnabled, navigationCleanupEnabled, hideReactionsEnabled }) {
+			setCinetraktReactionsHidden(hideReactionsEnabled);
 			if (collectionEnabled) placeCinetraktOfficialCollectionCard();
 			else restoreCinetraktOfficialCollectionCard();
 			if (navigationCleanupEnabled) hideCinetraktUnusedTraktNavigationEntries();
 			else restoreCinetraktNavigationEntries();
 		},
 		cleanup() {
+			document.documentElement.classList.remove('cinetrakt-hide-media-reactions');
 			restoreCinetraktOfficialCollectionCard();
 			restoreCinetraktNavigationEntries();
 		},

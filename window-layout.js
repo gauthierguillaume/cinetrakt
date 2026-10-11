@@ -4,16 +4,14 @@
 	const IMDB_RATINGS_MIN_WIDTH = 500;
 	const IMDB_RATINGS_MIN_HEIGHT = 300;
 	const IMDB_RATINGS_SCREEN_MARGIN = 40;
-	const POPUP_MIN_WIDTH = 560;
-	const POPUP_MAX_WIDTH = 760;
-	const POPUP_DEFAULT_WIDTH = 610;
 	const SOURCE_MIN_WIDTH = 900;
 	const WINDOW_SEAM_OVERLAP = 15;
 	const SNAP_EDGE_LEFT_FIX = -7;
 	const SNAP_EDGE_TOP_FIX = -6;
-	const SNAP_EDGE_RIGHT_FIX = 8;
+	// Keep the visible right border on this display. Seven pixels compensate
+	// for the invisible Windows frame; an eighth puts the border on its neighbour.
+	const SNAP_EDGE_RIGHT_FIX = 7;
 	const SNAP_EDGE_BOTTOM_FIX = 8;
-	const POPUP_INNER_RIGHT_FIX = 1;
 
 	function clampNumber(value, min, max) {
 		const lower = Math.min(min, max);
@@ -91,7 +89,7 @@
 		};
 	}
 
-	function getPopupLayout(displayBounds) {
+	function getPopupLayout(displayBounds, acceptedMinimumWidth = 1) {
 		const rawWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
 		const rawHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
 		const rawLeft = Math.round(Number(displayBounds.left) || 0);
@@ -100,9 +98,8 @@
 		const top = rawTop + SNAP_EDGE_TOP_FIX;
 		const width = rawWidth + Math.abs(SNAP_EDGE_LEFT_FIX) + SNAP_EDGE_RIGHT_FIX;
 		const height = rawHeight + Math.abs(SNAP_EDGE_TOP_FIX) + SNAP_EDGE_BOTTOM_FIX;
-		const maxPopupWidth = Math.max(1, Math.min(POPUP_MAX_WIDTH, Math.floor(width * 0.36)));
-		const minPopupWidth = Math.min(POPUP_MIN_WIDTH, maxPopupWidth);
-		const popupWidth = clampNumber(POPUP_DEFAULT_WIDTH, minPopupWidth, maxPopupWidth);
+		// Request the browser minimum, then recompute with the accepted outer width.
+		const popupWidth = clampNumber(Math.round(Number(acceptedMinimumWidth) || 1), 1, width);
 		const seamOverlap = Math.min(WINDOW_SEAM_OVERLAP, Math.max(0, width - popupWidth - SOURCE_MIN_WIDTH));
 
 		return {
@@ -115,7 +112,7 @@
 			popup: {
 				left: left + width - popupWidth,
 				top,
-				width: Math.max(1, popupWidth - POPUP_INNER_RIGHT_FIX),
+				width: popupWidth,
 				height,
 			},
 		};

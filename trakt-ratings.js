@@ -24,6 +24,8 @@
 	}
 
 	let cinetraktRatingColorsEnabled = null;
+	let cinetraktRatingObserver = null;
+	const CINETRAKT_USER_RATING_SELECTOR = '.trakt-user-rating, .social-activity-summary-rating, .trakt-tag:has(.trakt-star-fill)';
 
 	function setCinetraktTextIfChanged(element, value) {
 		const nextText = String(value ?? '');
@@ -125,6 +127,13 @@ function injectWatchOnStremioTraktRatingStyles() {
 			font-weight: 700 !important;
 			line-height: 1 !important;
 		}
+		.cinetrakt-personal-rating-label { margin-inline-end: 8px; }
+		.cinetrakt-rating-native-value { display: none !important; }
+		.cinetrakt-user-rating-colored,
+		.cinetrakt-user-rating-colored .trakt-rating-icon,
+		.cinetrakt-user-rating-colored svg {
+			color: var(--cinetrakt-rating-color) !important;
+		}
 		.wos-personal-star-colored,
 		.wos-personal-star-colored button,
 		.wos-personal-star-colored svg {
@@ -167,6 +176,8 @@ function getWatchOnStremioStarFillRatio(starUnit) {
 
 function getWatchOnStremioTraktStarUnits(starsBox) {
 	if (!starsBox) return [];
+	const currentUnits = Array.from(starsBox.querySelectorAll('[data-rating-group-item]'));
+	if (currentUnits.length) return currentUnits.slice(0, 5);
 
 	// Important : on prend les wrappers avec data-star-fill, pas les boutons internes.
 	// Les boutons indiquent "Rate with X stars" et ne représentent pas forcément la note actuelle.
@@ -221,6 +232,8 @@ function setWatchOnStremioStarColor(starUnit, color, enabled) {
 }
 
 function getWatchOnStremioPersonalRatingLabel(rateNowBox) {
+	const generatedLabel = rateNowBox.querySelector('.cinetrakt-personal-rating-label');
+	if (generatedLabel) return generatedLabel;
 	if (!rateNowBox) return null;
 
 	// Structure actuelle Trakt :
@@ -232,10 +245,17 @@ function getWatchOnStremioPersonalRatingLabel(rateNowBox) {
 	const directLabel = rateNowBox.querySelector(':scope > span.bold, :scope > span[class*="bold"]');
 	if (directLabel) return directLabel;
 
-	return Array.from(rateNowBox.children).find((element) => {
+	const legacyLabel = Array.from(rateNowBox.children).find((element) => {
 		const text = (element.textContent || '').trim();
 		return element.tagName.toLowerCase() === 'span' && (text === 'Rate' || /^\d+(?:\.\d+)?$/.test(text));
-	}) || null;
+	});
+	if (legacyLabel) return legacyLabel;
+	const starsBox = rateNowBox.querySelector('.trakt-rating-stars, .trakt-ratings-stars');
+	if (!starsBox) return null;
+	const label = document.createElement('span');
+	label.className = 'cinetrakt-personal-rating-label';
+	starsBox.before(label);
+	return label;
 }
 
 function getWatchOnStremioPersonalRatingFromMetadata(rateNowBox, starsBox) {
@@ -307,7 +327,17 @@ function colorizeTraktPersonalRating() {
 		let rating10 = NaN;
 		let effectiveRatios = ratios;
 
-		if (starTotal <= 0) {
+		const slider = starsBox.querySelector('[data-rating-group-root][aria-valuemax="5"]');
+		const sliderValue = slider ? Number(slider.getAttribute('aria-valuenow')) : NaN;
+		if (Number.isFinite(sliderValue) && sliderValue >= 0 && sliderValue <= 5) {
+			rating10 = sliderValue * 2;
+			effectiveRatios = getWatchOnStremioStarRatiosFromRating(rating10, starUnits.length);
+			if (rating10 === 0) {
+				setCinetraktTextIfChanged(label, '');
+				starUnits.forEach((starUnit) => setWatchOnStremioStarColor(starUnit, '', false));
+				return;
+			}
+		} else if (starTotal <= 0) {
 			rating10 = getWatchOnStremioPersonalRatingFromMetadata(rateNowBox, starsBox);
 			effectiveRatios = getWatchOnStremioStarRatiosFromRating(rating10, starUnits.length);
 
@@ -337,7 +367,63 @@ function colorizeTraktPersonalRating() {
 	});
 }
 
+// These native badges are shared by social drawers, home activity, reviews,
+// profile ratings and card footers. Keep their original value intact so that
+// rerenders, disabling the feature and repeated updates never double it twice.
+function colorizeTraktUserRatings() {
+	injectWatchOnStremioTraktRatingStyles();
+	document.querySelectorAll(CINETRAKT_USER_RATING_SELECTOR).forEach((badge) => {
+		const nativeValue = [...badge.querySelectorAll(':scope > span, :scope > p')].find((value) =>
+			!value.classList.contains('cinetrakt-rating-value') && /^\d+(?:[.,]\d+)?$/.test(value.textContent.trim()));
+		if (!nativeValue) {
+			badge.querySelector(':scope > .cinetrakt-rating-value')?.remove();
+			badge.querySelectorAll('.cinetrakt-rating-native-value').forEach((value) => value.classList.remove('cinetrakt-rating-native-value'));
+			badge.classList.remove('cinetrakt-user-rating-colored');
+			badge.style.removeProperty('--cinetrakt-rating-color');
+			return;
+		}
+		const text = nativeValue.textContent.trim().replace(',', '.');
+		const rating5 = /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN;
+		if (!Number.isFinite(rating5) || rating5 <= 0 || rating5 > 5) return;
+		const rating10 = rating5 * 2;
+		let label = badge.querySelector(':scope > .cinetrakt-rating-value');
+		if (!label) {
+			label = document.createElement('span');
+			label.className = 'cinetrakt-rating-value bold no-wrap';
+			nativeValue.after(label);
+		}
+		toggleCinetraktClass(nativeValue, 'cinetrakt-rating-native-value', true);
+		toggleCinetraktClass(badge, 'cinetrakt-user-rating-colored', true);
+		setCinetraktTextIfChanged(label, formatWatchOnStremioRatingValue(rating10));
+		label.setAttribute('aria-label', `${formatWatchOnStremioRatingValue(rating10)} out of 10`);
+		setCinetraktImportantStyleIfChanged(badge, '--cinetrakt-rating-color', getWatchOnStremioRatingColor(rating10).bg);
+	});
+}
+
+function observeTraktRatingValues() {
+	if (cinetraktRatingObserver || typeof MutationObserver !== 'function') return;
+	cinetraktRatingObserver = new MutationObserver((mutations) => {
+		if (mutations.some((mutation) => mutation.type === 'attributes'
+			? mutation.target.matches('[data-rating-group-root]')
+			: mutation.target.parentElement?.closest(CINETRAKT_USER_RATING_SELECTOR)
+				&& !mutation.target.parentElement?.closest('.cinetrakt-rating-value'))) {
+			globalThis.CineTraktTraktRuntime?.schedule('rating-value-change', 0);
+		}
+	});
+	cinetraktRatingObserver.observe(document.body, {
+		subtree: true, characterData: true, attributes: true, attributeFilter: ['aria-valuenow'],
+	});
+}
+
 function resetTraktRatingColors() {
+	cinetraktRatingObserver?.disconnect();
+	cinetraktRatingObserver = null;
+	document.querySelectorAll('.cinetrakt-personal-rating-label, .cinetrakt-rating-value').forEach((label) => label.remove());
+	document.querySelectorAll('.cinetrakt-rating-native-value').forEach((value) => value.classList.remove('cinetrakt-rating-native-value'));
+	document.querySelectorAll('.cinetrakt-user-rating-colored').forEach((badge) => {
+		badge.classList.remove('cinetrakt-user-rating-colored');
+		badge.style.removeProperty('--cinetrakt-rating-color');
+	});
 	document.querySelectorAll('[data-watch-on-stremio-rating-colored="true"]').forEach((element) => {
 		element.style.removeProperty('color');
 		element.style.removeProperty('text-decoration-color');
@@ -534,7 +620,8 @@ function bindWatchOnStremioImdbDirectLink(imdbItem, imdbId) {
 
 	if (imdbItem.dataset.cinetraktImdbDirectBound === 'true') return;
 	imdbItem.dataset.cinetraktImdbDirectBound = 'true';
-	imdbItem.addEventListener('click', (event) => {
+	const openDirectLink = (event) => {
+		if (event.type === 'auxclick' && event.button !== 1) return;
 		const directImdbId = imdbItem.dataset.cinetraktImdbId || '';
 		if (!isCinetraktFeatureEnabled('traktRatingsToggle')
 			|| !/^tt\d{7,}$/.test(directImdbId)) return;
@@ -543,7 +630,11 @@ function bindWatchOnStremioImdbDirectLink(imdbItem, imdbId) {
 		event.stopPropagation();
 		event.stopImmediatePropagation();
 		openWatchOnStremioImdbTitle(directImdbId);
-	}, true);
+	};
+	imdbItem.addEventListener('click', openDirectLink, true);
+	// Middle click dispatches auxclick, not click. Cancel the enclosing native
+	// ratings link so it cannot open a second copy of the current Trakt page.
+	imdbItem.addEventListener('auxclick', openDirectLink, true);
 }
 
 function resetWatchOnStremioImdbDirectLinks() {
@@ -789,6 +880,8 @@ function resetTraktRatingsControls() {
 			if (nextEnabled) {
 				colorizeTraktImdbRatings();
 				colorizeTraktPersonalRating();
+				colorizeTraktUserRatings();
+				observeTraktRatingValues();
 			} else if (cinetraktRatingColorsEnabled !== false) {
 				resetTraktRatingColors();
 			}

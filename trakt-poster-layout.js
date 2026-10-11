@@ -8,6 +8,7 @@
 	const {
 		canUseStickyLayout,
 		getRightListInnerWidth,
+		getStickyPosterSize,
 		getViewportWidth,
 	} = globalThis.CineTraktPosterLayoutUtils;
 	let cinetraktStickyPosterState = null;
@@ -31,7 +32,7 @@ function injectWatchOnStremioPosterSizeStyles() {
 				var(--ni-480) !important;
 			width: 100% !important;
 			max-width: 100% !important;
-			margin-left: 0 !important;
+			margin-inline: 0 !important;
 			align-items: start !important;
 		}
 
@@ -64,6 +65,11 @@ function injectWatchOnStremioPosterSizeStyles() {
 			main.cinetrakt-sticky-poster-detail-page {
 			padding-left: var(--watch-on-stremio-sticky-content-left) !important;
 			padding-right: 12px !important;
+			/* Native lists bleed into Trakt's sidebar. Here the poster occupies
+			   that space, so their scroll viewport must start at the content rail. */
+			--list-bleed-start: 0px;
+			container-type: inline-size;
+			container-name: cinetrakt-detail;
 		}
 
 		main.cinetrakt-sticky-poster-detail-page > * {
@@ -299,21 +305,61 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			main.cinetrakt-sticky-poster-detail-page .cinetrakt-sticky-right-section {
 			box-sizing: border-box !important;
-			margin: 0 0 0 -24px !important;
-			width: calc(100% + 24px) !important;
-			max-width: calc(100% + 24px) !important;
+			margin: 0 0 0 calc(-1 * var(--layout-distance-side)) !important;
+			width: calc(100% + var(--layout-distance-side)) !important;
+			max-width: calc(100% + var(--layout-distance-side)) !important;
 			min-width: 0 !important;
 		}
 
-		/* Le padding gauche natif réaligne le contenu après le décalage de la
-		   section. Le bord droit n'en reprend pas un second : toutes les listes
-		   terminent ainsi sur la même marge que le résumé, sans carte tronquée. */
+		/* Keep the native trailing inset: Trakt's mask hides that space, and its
+		   card counts must use the remaining inner width rather than the viewport. */
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			.cinetrakt-sticky-right-section .section-list-horizontal-scroll {
 			box-sizing: border-box !important;
 			width: 100% !important;
 			max-width: 100% !important;
-			padding-inline-end: 0 !important;
+			padding-inline-end: var(--layout-distance-side) !important;
+			/* Fractional card sizing can put the next card just before the native
+			   mask. Its hover outline also extends outside its box. End the mask
+			   inside the trailing gap, with room for both (without hiding a card). */
+			--list-end-fade: calc(var(--layout-distance-side) + 4px) !important;
+		}
+
+		/* Trakt hides desktop overflow on drilldown lists. Keep every service
+		   reachable inside the narrower contextual column as well. */
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready .section-list-horizontal-scroll {
+			overflow-x: auto !important;
+		}
+
+		/* Streaming logos have a native fixed size. Fit a whole number of logos
+		   in the contextual carousel instead of showing a sliced final logo. */
+		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+			.watch-on-stremio-poster-size-ready
+			.section-list-horizontal-scroll:has(.where-to-watch-item-content) {
+			max-width: calc(round(down, calc(100% - 4px + var(--list-gap)),
+				calc(var(--width-where-to-watch-item) + var(--list-gap))) - var(--list-gap) + 4px);
+		}
+
+		@container cinetrakt-detail (max-width: 840px) {
+			html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+				.trakt-summary-container.watch-on-stremio-poster-size-ready {
+				grid-template-columns: minmax(0, 1fr) !important;
+			}
+
+			html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
+				.watch-on-stremio-poster-size-ready .trakt-summary-contextual-content {
+				grid-column: 1 !important;
+				width: 100% !important;
+				max-width: 100% !important;
+			}
+
+			.cinetrakt-summary-trivia .trakt-trivia-summary-card,
+			.cinetrakt-summary-trivia .trakt-trivia-summary-card > a,
+			.cinetrakt-summary-trivia .trakt-card {
+				max-width: 100% !important;
+				min-width: 0 !important;
+			}
 		}
 
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
@@ -410,6 +456,7 @@ function attachCinetraktStickyPosterControls(state) {
 	);
 	controls.classList.add('cinetrakt-sticky-poster-controls');
 	state.rail.appendChild(controls);
+	state.resizeObserver?.observe(controls);
 }
 
 function findCinetraktSectionByTitle(root, labels) {
@@ -468,9 +515,11 @@ function canPlaceCinetraktTriviaBesideSentiment(state, contextualContent, sentim
 
 	// Chaque carte conserve sa largeur native actuelle. Une largeur complète de
 	// Trivia reste également réservée au résumé principal pour éviter tout écrasement.
+	const summaryGap = Number.parseFloat(getComputedStyle(state.summaryContainer).columnGap) || 0;
 	const minimumWidth = sentimentWidth
 		+ (cardWidth * 2)
-		+ (CINETRAKT_CONTEXTUAL_PAIR_GAP * 2);
+		+ CINETRAKT_CONTEXTUAL_PAIR_GAP
+		+ summaryGap;
 	return summaryWidth >= minimumWidth;
 }
 
@@ -629,7 +678,25 @@ function applyCinetraktStickyPosterDimensions(state, width, height) {
 		posterSideGap,
 	} = state;
 	const contentLeft = summaryLeft + width + posterSideGap;
-	const listInnerWidth = getRightListInnerWidth(getCinetraktViewportWidth(), contentLeft);
+	const rightList = mainContent.querySelector('.cinetrakt-sticky-right-section .section-list-horizontal-scroll');
+	const nativeSideInset = rightList ? Number.parseFloat(getComputedStyle(rightList).paddingInlineEnd) : 24;
+	const listInnerWidth = getRightListInnerWidth(getCinetraktViewportWidth(), contentLeft, nativeSideInset);
+	if (state.listInnerWidth !== listInnerWidth) {
+		state.listInnerWidth = listInnerWidth;
+		window.clearTimeout(state.listAlignmentTimer);
+		// Native card widths change with the available space. Keep the nearest
+		// card at the start instead of retaining a now fractional scroll offset.
+		state.listAlignmentTimer = window.setTimeout(() => {
+			if (state !== cinetraktStickyPosterState) return;
+			for (const list of mainContent.querySelectorAll('.cinetrakt-sticky-right-section .section-list-horizontal-scroll')) {
+				if (list.scrollLeft <= 0) continue;
+				const start = list.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(list).paddingInlineStart);
+				const cards = [...list.querySelectorAll('.trakt-card')].filter(card => card.getBoundingClientRect().width > 0);
+				const nearest = cards.reduce((best, card) => !best || Math.abs(card.getBoundingClientRect().left - start) < Math.abs(best.getBoundingClientRect().left - start) ? card : best, null);
+				if (nearest) list.scrollLeft += nearest.getBoundingClientRect().left - start;
+			}
+		}, 100);
+	}
 
 	document.documentElement.style.setProperty('--list-inner-width', `${listInnerWidth}px`, 'important');
 	summaryContainer.style.setProperty('--summary-poster-width', `${width}px`, 'important');
@@ -645,6 +712,8 @@ function applyCinetraktStickyPosterDimensions(state, width, height) {
 }
 
 function clearCinetraktStickyPosterDimensions(state) {
+	window.clearTimeout(state.listAlignmentTimer);
+	state.listInnerWidth = null;
 	window.cancelAnimationFrame(state.boundsCorrectionFrame);
 	state.boundsCorrectionFrame = null;
 	document.documentElement.style.removeProperty('--list-inner-width');
@@ -666,6 +735,9 @@ function clearCinetraktStickyPosterDimensions(state) {
 
 function setCinetraktPosterLayoutMode(state, useStickyLayout) {
 	const compact = !useStickyLayout;
+	// The document-start bootstrap only knows the viewport threshold. Once the
+	// rail exists, its compact styles must also remain active below that threshold.
+	document.documentElement.classList.add('cinetrakt-poster-layout-enabled');
 	document.documentElement.classList.toggle('cinetrakt-poster-layout-compact', compact);
 	state.summaryContainer.classList.toggle('cinetrakt-poster-layout-compact', compact);
 	state.posterStage.style.setProperty(
@@ -745,8 +817,9 @@ function getCinetraktStickyPosterMetrics({
 			- posterDecorationOverflow
 			- posterFooterHeight,
 	);
-	const height = Math.floor(availableHeight);
-	const width = Math.max(1, Math.floor(height * imageRatio));
+	const { width, height } = getStickyPosterSize(
+		getCinetraktViewportWidth(), summaryLeft, availableHeight, imageRatio, CINETRAKT_POSTER_SIDE_GAP,
+	);
 	const contentLeft = summaryLeft + width + CINETRAKT_POSTER_SIDE_GAP;
 
 	return {
@@ -774,7 +847,8 @@ function scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, bottom
 			- bottomSafety
 			- state.posterDecorationOverflow;
 		const correctedHeight = Math.floor(targetPosterBottom - posterRect.top);
-		if (correctedHeight <= 0 || Math.abs(correctedHeight - posterRect.height) < 0.5) return;
+		// Only correct an actual bottom overflow; do not enlarge a width-limited poster.
+		if (correctedHeight <= 0 || correctedHeight >= posterRect.height - 0.5) return;
 
 		const correctedWidth = Math.max(1, Math.floor(correctedHeight * imageRatio));
 		applyCinetraktStickyPosterDimensions(state, correctedWidth, correctedHeight);
@@ -823,8 +897,6 @@ function updateCinetraktStickyPosterLayout(state) {
 		restoreCinetraktTriviaToNativeFlow(state);
 		return;
 	}
-	attachCinetraktTriviaBesideSentiment(state);
-
 	state.summaryLeft = metrics.summaryLeft;
 	state.posterTop = metrics.posterTop;
 	state.posterSideGap = metrics.posterSideGap;
@@ -833,6 +905,9 @@ function updateCinetraktStickyPosterLayout(state) {
 	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-left', `${metrics.summaryLeft}px`);
 	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-top', `${railTop}px`);
 	applyCinetraktStickyPosterDimensions(state, metrics.width, metrics.height);
+	// Decide the contextual arrangement using the new content width, including
+	// when a resize has just switched back from the native compact layout.
+	attachCinetraktTriviaBesideSentiment(state);
 	scheduleCinetraktStickyPosterBoundsCorrection(
 		state,
 		metrics.imageRatio,
@@ -951,6 +1026,13 @@ function setupWatchOnStremioPosterSize() {
 		posterSideGap: metrics.posterSideGap,
 		posterAspectRatio,
 	};
+	if (typeof ResizeObserver === 'function') {
+		cinetraktStickyPosterState.resizeObserver = new ResizeObserver(() => {
+			scheduleCinetraktStickyPosterLayoutUpdate();
+		});
+		const sidebar = document.querySelector('.trakt-side-navbar');
+		if (sidebar) cinetraktStickyPosterState.resizeObserver.observe(sidebar);
+	}
 	syncCinetraktPosterBorderRadius(cinetraktStickyPosterState);
 	globalThis.CineTraktTraktStremioUi?.refreshDetailPosterTarget?.();
 	updateCinetraktStickyPosterLayout(cinetraktStickyPosterState);
@@ -965,6 +1047,8 @@ function cleanupWatchOnStremioPosterSize({ discardMovedTrivia = false } = {}) {
 	);
 	document.documentElement.style.removeProperty('--list-inner-width');
 	const state = cinetraktStickyPosterState;
+	window.clearTimeout(state?.listAlignmentTimer);
+	state?.resizeObserver?.disconnect();
 	window.cancelAnimationFrame(state?.boundsCorrectionFrame);
 	const summaryContainer = state?.summaryContainer
 		|| document.querySelector('.watch-on-stremio-poster-size-ready');

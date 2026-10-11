@@ -20,6 +20,11 @@
 	const ACTIVE_CLASS = 'wos-stremio-panel-active';
 	const ROOT_CLASS = 'wos-stremio-panel-root';
 	const HIDDEN_CLASS = 'wos-stremio-panel-hidden';
+	const NO_PLAY_CLASS = 'wos-stremio-sources-no-play';
+	const STREAM_CARDS_CLASS = 'wos-stremio-source-cards';
+	const THEME_CLASS = 'wos-stremio-trakt-theme';
+	const TITLE_HIGHLIGHT = 'cinetrakt-stream-title';
+	const SIZE_HIGHLIGHT = 'cinetrakt-stream-size';
 	const DISCOVERY_RETRY_DELAYS = Object.freeze([80, 160, 320, 640, 1200, 2400, 4000]);
 
 	let lastPanel = null;
@@ -111,6 +116,111 @@
 				height: auto !important;
 			}
 
+			html.${ACTIVE_CLASS}.${NO_PLAY_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > svg[class*="icon-"] {
+				display: none !important;
+			}
+
+			html.${ACTIVE_CLASS}.${NO_PLAY_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="description-container-"] {
+				display: block !important;
+				min-width: 0 !important;
+				white-space: pre-wrap !important;
+				overflow-wrap: anywhere !important;
+				overflow: visible !important;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS}[class*="streams-list-container"] {
+				padding: 8px 4px 20px !important;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} [class*="streams-container-"] {
+				padding: 0 !important;
+				min-width: 0 !important;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] {
+				width: 100% !important;
+				min-width: 0 !important;
+				margin: 0 0 6px !important;
+				padding: 8px 6px !important;
+				gap: 6px !important;
+				align-items: stretch !important;
+				border: 1px solid rgba(201, 183, 239, 0.13) !important;
+				border-radius: 10px !important;
+				background: rgba(201, 183, 239, 0.045) !important;
+				transition: background-color 120ms ease, border-color 120ms ease;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:hover,
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:focus-visible {
+				background: rgba(168, 85, 247, 0.12) !important;
+				border-color: rgba(192, 132, 252, 0.55) !important;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="info-container-"] {
+				width: 7rem !important;
+				max-width: 34% !important;
+				min-width: 0 !important;
+				padding-right: 4px !important;
+				border-right: 1px solid rgba(201, 183, 239, 0.16) !important;
+				overflow: visible !important;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] [class*="addon-name-"] {
+				white-space: pre-wrap !important;
+				overflow-wrap: anywhere !important;
+				overflow: visible !important;
+			}
+
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="description-container-"] {
+				display: block !important;
+				min-width: 0 !important;
+				align-self: center !important;
+				font-size: 0.95em !important;
+				white-space: pre-wrap !important;
+				overflow-wrap: anywhere !important;
+				overflow: visible !important;
+			}
+
+			html.${ACTIVE_CLASS}.${THEME_CLASS},
+			html.${ACTIVE_CLASS}.${THEME_CLASS} body,
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS},
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} [class*="select-choices"],
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} [class*="season-bar"],
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} [class*="search-bar"] {
+				background: #17141b !important;
+				color: #ebe7ef !important;
+			}
+
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] {
+				background: #100e13 !important;
+				border-color: rgba(192, 132, 252, 0.18) !important;
+			}
+
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:hover,
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:focus-visible {
+				background: #281b33 !important;
+				border-color: #a855f7 !important;
+			}
+
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] [class*="addon-name-"],
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="description-container-"] {
+				line-height: 1.5 !important;
+			}
+
+			html.${ACTIVE_CLASS}.${THEME_CLASS} ::highlight(${TITLE_HIGHLIGHT}) {
+				color: #a855f7;
+			}
+
+			html.${ACTIVE_CLASS}.${THEME_CLASS} ::highlight(${SIZE_HIGHLIGHT}) {
+				color: #f2cc60;
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] {
+					transition: none !important;
+				}
+			}
+
 			html.${ACTIVE_CLASS} .${ROOT_CLASS}::-webkit-scrollbar {
 				width: 8px !important;
 			}
@@ -131,6 +241,10 @@
 		document.querySelectorAll(`.${ROOT_CLASS}`).forEach((element) => element.classList.remove(ROOT_CLASS));
 		document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((element) => element.classList.remove(HIDDEN_CLASS));
 		document.documentElement.classList.remove(ACTIVE_CLASS);
+		document.documentElement.classList.remove(NO_PLAY_CLASS);
+		document.documentElement.classList.remove(STREAM_CARDS_CLASS);
+		document.documentElement.classList.remove(THEME_CLASS);
+		clearStreamHighlights();
 
 		if (resetTracking) {
 			lastPanel = null;
@@ -220,6 +334,59 @@
 		}, { passive: true });
 	}
 
+	function clearStreamHighlights() {
+		globalThis.CSS?.highlights?.delete(TITLE_HIGHLIGHT);
+		globalThis.CSS?.highlights?.delete(SIZE_HIGHLIGHT);
+	}
+
+	function getTextRange(element, offsets) {
+		if (!element || offsets.end <= offsets.start) return null;
+		const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+		const range = document.createRange();
+		let position = 0;
+		let started = false;
+		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+			const end = position + node.textContent.length;
+			if (!started && offsets.start < end) {
+				range.setStart(node, offsets.start - position);
+				started = true;
+			}
+			if (started && offsets.end <= end) {
+				range.setEnd(node, offsets.end - position);
+				return range;
+			}
+			position = end;
+		}
+		return null;
+	}
+
+	function applyStreamHighlights(panelRoot) {
+		if (!globalThis.CineTraktSettings.isEnabled('stremioTraktTheme')) {
+			clearStreamHighlights();
+			return;
+		}
+		if (!globalThis.CSS?.highlights || typeof Highlight !== 'function') return;
+		const titles = [];
+		const sizes = [];
+		const formatting = globalThis.CineTraktStreamFormatting;
+		panelRoot.querySelectorAll('a[class*="stream-container-"]').forEach((card) => {
+			const info = card.querySelector('[class*="addon-name-"]');
+			const description = card.querySelector('[class*="description-container-"]');
+			const fileSizes = formatting.getFileSizeRanges(info?.textContent);
+			// Metadata addons (IMDb, BasedOn, etc.) are not stream titles.
+			if (!card.hasAttribute('download') && fileSizes.length === 0) return;
+			const title = getTextRange(description, formatting.getTitleRange(description?.textContent));
+			if (title) titles.push(title);
+			fileSizes.forEach((offsets) => {
+				const size = getTextRange(info, offsets);
+				if (size) sizes.push(size);
+			});
+		});
+		// Native text nodes and links stay intact, including their tooltip and events.
+		CSS.highlights.set(TITLE_HIGHLIGHT, new Highlight(...titles));
+		CSS.highlights.set(SIZE_HIGHLIGHT, new Highlight(...sizes));
+	}
+
 	function applyPanel() {
 		if (!isDetailRoute()) {
 			clearPanelState({ resetTracking: true });
@@ -249,6 +416,13 @@
 
 		hideEverythingExcept(panelRoot);
 		document.documentElement.classList.add(ACTIVE_CLASS);
+		document.documentElement.classList.toggle(NO_PLAY_CLASS,
+			globalThis.CineTraktSettings.isEnabled('stremioHidePlayIcon'));
+		document.documentElement.classList.toggle(STREAM_CARDS_CLASS,
+			globalThis.CineTraktSettings.isEnabled('stremioStreamCards'));
+		document.documentElement.classList.toggle(THEME_CLASS,
+			globalThis.CineTraktSettings.isEnabled('stremioTraktTheme'));
+		applyStreamHighlights(panelRoot);
 		trackPanelScroll(panelRoot);
 
 		if (shouldResetScroll) {
@@ -295,7 +469,7 @@
 
 	function start() {
 		const observer = new MutationObserver(scheduleApply);
-		observer.observe(document.documentElement, { childList: true, subtree: true });
+		observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
 
 		const handleRouteChange = () => {
 			clearDiscoveryRetry();

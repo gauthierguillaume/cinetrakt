@@ -14,6 +14,103 @@ const traktEarlyStyles = read('trakt-early.css');
 const traktSoundtrackSource = read('trakt-soundtrack.js');
 const traktCustomizationsSource = read('trakt-customizations.js');
 const stremioSource = read('stremio.js');
+
+test('user ratings retain native values through repeated conversion, updates and reset', () => {
+	const vm = require('node:vm');
+	const all = [];
+	function node(text = '') {
+		const classes = new Set();
+		const styles = new Map();
+		const value = {
+			textContent: text, dataset: {}, children: [],
+			classList: { contains: name => classes.has(name), add: name => classes.add(name),
+				remove: name => classes.delete(name), toggle(name, enabled) { enabled ? classes.add(name) : classes.delete(name); } },
+			style: { getPropertyValue: name => styles.get(name) || '', getPropertyPriority: () => 'important',
+				setProperty: (name, color) => styles.set(name, color), removeProperty: name => styles.delete(name) },
+			setAttribute() {},
+			set className(names) { names.split(' ').forEach(name => classes.add(name)); },
+			after(label) { label.parent = this.parent; this.parent.children.push(label); },
+			remove() { this.parent.children = this.parent.children.filter(child => child !== this); },
+			querySelector() { return this.children.find(child => child.classList.contains('cinetrakt-rating-value')) || null; },
+			querySelectorAll() { return this.children; },
+		};
+		all.push(value);
+		return value;
+	}
+	const badges = ['3', '4.5', '3,5', '4.25', '100%'].map(text => {
+		const badge = node();
+		const native = node(text); native.parent = badge; badge.children = [native];
+		return badge;
+	});
+	const document = {
+		getElementById: () => true,
+		createElement: () => node(),
+		querySelectorAll(selector) {
+			if (selector.startsWith('.trakt-user-rating')) return badges;
+			if (selector.startsWith('[data-') || selector === '.wos-personal-star-colored') return [];
+			return all.filter(value => selector.split(', ').some(name => value.classList.contains(name.slice(1))));
+		},
+	};
+	const context = vm.createContext({ document,
+		CineTraktExtensionProtocol: { MESSAGE_TYPES: {} }, CineTraktStremioOpen: {}, CineTraktTraktStremioUi: {},
+		CineTraktRatingUtils: require('../rating-utils.js'),
+	});
+	vm.runInContext(traktRatingsSource.replace('globalThis.CineTraktTraktRatings = api;',
+		'globalThis.testRatings = { colorizeTraktUserRatings, resetTraktRatingColors };'), context);
+	const { colorizeTraktUserRatings: update, resetTraktRatingColors: reset } = context.testRatings;
+	update(); update();
+	assert.deepEqual(badges.map(badge => badge.children[0].textContent), ['3', '4.5', '3,5', '4.25', '100%']);
+	assert.deepEqual(badges.map(badge => badge.querySelector()?.textContent), ['6', '9', '7', '8.5', undefined]);
+	assert.equal(badges[0].style.getPropertyValue('--cinetrakt-rating-color'), '#22c55e');
+	assert.equal(badges[1].style.getPropertyValue('--cinetrakt-rating-color'), '#8b5cf6');
+	badges[0].children[0].textContent = '4'; update();
+	assert.equal(badges[0].querySelector().textContent, '8');
+	reset();
+	assert.ok(badges.every(badge => badge.children.length === 1));
+	assert.ok(badges.every(badge => !badge.children[0].classList.contains('cinetrakt-rating-native-value')));
+});
+
+test('IMDb rating handles middle click once and leaves right click and disabled controls alone', () => {
+	const vm = require('node:vm');
+	const links = [];
+	const listeners = {};
+	let enabled = true;
+	const item = {
+		classList: { add() {} }, dataset: {}, setAttribute() {},
+		addEventListener(type, handler) { (listeners[type] ||= []).push(handler); },
+	};
+	const context = vm.createContext({
+		isCinetraktFeatureEnabled: () => enabled,
+		document: {
+			body: { appendChild() {} },
+			createElement: () => ({ click() { links.push(this.href); }, remove() {} }),
+		},
+	});
+	vm.runInContext(traktRatingsSource.slice(
+		traktRatingsSource.indexOf('function openWatchOnStremioImdbTitle('),
+		traktRatingsSource.indexOf('function resetWatchOnStremioImdbDirectLinks('),
+	), context);
+	context.bindWatchOnStremioImdbDirectLink(item, 'tt0460681');
+	context.bindWatchOnStremioImdbDirectLink(item, 'tt0460681');
+	const dispatch = (type, button) => {
+		const calls = [];
+		for (const handler of listeners[type]) handler({ type, button,
+			preventDefault() { calls.push('preventDefault'); },
+			stopPropagation() { calls.push('stopPropagation'); },
+			stopImmediatePropagation() { calls.push('stopImmediatePropagation'); },
+		});
+		return calls;
+	};
+	assert.deepEqual(dispatch('auxclick', 1), ['preventDefault', 'stopPropagation', 'stopImmediatePropagation']);
+	assert.deepEqual(links, ['https://www.imdb.com/title/tt0460681/']);
+	assert.deepEqual(dispatch('auxclick', 2), []);
+	assert.equal(links.length, 1);
+	dispatch('click', 0);
+	assert.equal(links.length, 2);
+	enabled = false;
+	assert.deepEqual(dispatch('auxclick', 1), []);
+	assert.equal(links.length, 2);
+});
 const imdbEntrySource = read('imdb.js');
 const imdbButtonSource = read('imdb-trakt-button.js');
 const imdbRatingsSource = read('imdb-ratings.js');
@@ -146,11 +243,11 @@ test('poster integration preserves native Trakt href values', () => {
 	assert.match(traktPosterSource, /originalPosterRect\.top - CINETRAKT_POSTER_TOP_REDUCTION/);
 	assert.match(traktPosterSource, /const CINETRAKT_POSTER_BOTTOM_SAFETY = 12/);
 	assert.match(traktPosterSource, /const contentLeft = summaryLeft \+ width \+ posterSideGap/);
-	assert.match(traktPosterSource, /getRightListInnerWidth\(getCinetraktViewportWidth\(\), contentLeft\)/);
+	assert.match(traktPosterSource, /getRightListInnerWidth\(getCinetraktViewportWidth\(\), contentLeft, nativeSideInset\)/);
 	assert.match(traktPosterSource, /document\.documentElement\.style\.setProperty\('--list-inner-width'/);
 	assert.match(traktPosterSource, /document\.documentElement\.style\.removeProperty\('--list-inner-width'\)/);
 	assert.match(traktPosterSource, /\.cinetrakt-sticky-right-section \.section-list-horizontal-scroll/);
-	assert.match(traktPosterSource, /padding-inline-end:\s*0\s*!important/);
+	assert.match(traktPosterSource, /padding-inline-end:\s*var\(--layout-distance-side\)\s*!important/);
 	assert.match(traktPosterSource, /const CINETRAKT_POSTER_SIDE_GAP = 16/);
 	assert.doesNotMatch(traktPosterSource, /soundtrackCardRect|sidebarVisualRight/);
 	assert.match(traktPosterSource, /sidebarRight \+ CINETRAKT_POSTER_SIDE_GAP/);
@@ -210,7 +307,7 @@ test('poster layout places native Trivia beside Sentiment without compressing ei
 	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(contextualContent, \['sentiment'\]\)/);
 	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(state\.mainContent, \['trivia', 'anecdotes'\]\)/);
 	assert.match(traktPosterSource, /function canPlaceCinetraktTriviaBesideSentiment\(state, contextualContent, sentimentSection\)/);
-	assert.match(traktPosterSource, /const minimumWidth = sentimentWidth[\s\S]*?\+ \(cardWidth \* 2\)[\s\S]*?\+ \(CINETRAKT_CONTEXTUAL_PAIR_GAP \* 2\)/);
+	assert.match(traktPosterSource, /const minimumWidth = sentimentWidth[\s\S]*?\+ \(cardWidth \* 2\)[\s\S]*?\+ CINETRAKT_CONTEXTUAL_PAIR_GAP[\s\S]*?\+ summaryGap/);
 	assert.match(traktPosterSource, /row\.append\(sentimentSection, triviaSection\)/);
 	assert.match(traktPosterSource, /classList\.add\('cinetrakt-contextual-pair-ready'\)/);
 	assert.match(traktPosterSource, /\.cinetrakt-sentiment-trivia-row\s*\{[\s\S]*?grid-template-columns:\s*var\(--ni-320\) var\(--ni-480\)\s*!important/);
@@ -289,7 +386,6 @@ test('summary ratings keep only IMDb, open its title directly, and preserve the 
 	assert.match(traktRatingsSource, /function openWatchOnStremioImdbTitle\(imdbId\)/);
 	assert.match(traktRatingsSource, /`https:\/\/www\.imdb\.com\/title\/\$\{imdbId\}\//);
 	assert.match(traktRatingsSource, /link\.target = '_blank'/);
-	assert.match(traktRatingsSource, /imdbItem\.addEventListener\('click',[\s\S]*?event\.stopImmediatePropagation\(\)/);
 	assert.match(traktRatingsSource, /bindWatchOnStremioImdbDirectLink\(imdbItem, directImdbId\)/);
 	assert.match(traktRatingsSource, /getImdbIdFromTraktMediaUrl\(window\.location\.href\)/);
 	assert.match(traktStremioSource, /resolveImdbIdFromMediaUrl: getImdbIdFromTraktMediaUrl/);
@@ -308,9 +404,24 @@ test('summary ratings keep only IMDb, open its title directly, and preserve the 
 });
 
 test('episode title and number share one explicit footer target', () => {
-	assert.match(traktStremioSource, /element\.closest\('\.trakt-card-footer-information'\)/);
-	assert.match(traktStremioSource, /footerInformation\.querySelector\(':scope > \.trakt-card-title'\)/);
-	assert.match(traktStremioSource, /footerInformation\.querySelector\(':scope > \.trakt-card-subtitle'\)/);
+	const vm = require('node:vm');
+	const context = vm.createContext({});
+	vm.runInContext(traktStremioSource.slice(
+		traktStremioSource.indexOf('function getSeasonEpisodeClickableTargets('),
+		traktStremioSource.indexOf('function makeSeasonEpisodeElementClickable('),
+	), context);
+	for (const containerClass of ['trakt-card-footer-information', 'trakt-summary-card-titles']) {
+		for (const isEpisodeTitle of [true, false]) {
+			const title = { textContent: isEpisodeTitle ? 'Party On, Garth' : 'Supernatural',
+				querySelector: () => isEpisodeTitle ? {} : null };
+			const subtitle = { textContent: isEpisodeTitle ? 'S7 • E18' : 'S7 • E18 - Party On, Garth' };
+			const container = { querySelector: selector => ({ '.trakt-card-title': title, '.trakt-card-subtitle': subtitle })[selector] };
+			const episodeNumber = { closest: selector => selector.includes(`.${containerClass}`) ? container : null };
+			const targets = context.getSeasonEpisodeClickableTargets(episodeNumber);
+			assert.equal(targets.length, 1);
+			assert.equal(targets[0], isEpisodeTitle ? container : subtitle);
+		}
+	}
 	assert.match(traktStremioSource, /findEpisodeLinkData\(current\)/);
 	assert.match(traktStremioSource, /getEpisodeDataFromTraktUrl\(link\.href/);
 	assert.doesNotMatch(traktStremioSource, /classList\.add\([^\n]*(?:trakt-card-content|trakt-card-image)/);

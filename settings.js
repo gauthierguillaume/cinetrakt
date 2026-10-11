@@ -13,9 +13,13 @@
 		traktSoundtrackAutoplay: true,
 		traktCollectionCard: true,
 		traktNavigationCleanup: true,
+		traktHideReactions: true,
 		imdbTraktButton: true,
 		imdbRatingColors: true,
 		stremioCompactPanel: true,
+		stremioHidePlayIcon: true,
+		stremioStreamCards: true,
+		stremioTraktTheme: true,
 		newTabMovieDiscovery: false,
 	});
 
@@ -29,9 +33,13 @@
 		{ key: 'traktPosterLayout', group: 'Trakt', category: 'Affichage des fiches', title: 'Grande affiche', description: 'Agrandit l’affiche et active la mise en page détaillée de CineTrakt.' },
 		{ key: 'traktCollectionCard', group: 'Trakt', category: 'Affichage des fiches', title: 'Collection officielle', description: 'Place la collection officielle directement sous le synopsis du film.' },
 		{ key: 'traktNavigationCleanup', group: 'Trakt', category: 'Navigation', title: 'Navigation simplifiée', description: 'Masque Library et Collaborations dans la barre latérale de Trakt.' },
+		{ key: 'traktHideReactions', group: 'Trakt', category: 'Affichage des fiches', title: 'Masquer les réactions à côté d’Activities', description: 'Masque uniquement le bloc de réactions du film ou de la série, à gauche d’Activities et au-dessus du synopsis. Conserve les réactions des reviews et des autres sections.' },
 		{ key: 'imdbTraktButton', group: 'IMDb', title: 'Bouton Trakt', description: 'Ajoute le logo Trakt et ouvre la fiche correspondante depuis IMDb.' },
 		{ key: 'imdbRatingColors', group: 'IMDb', title: 'Couleurs des notes', description: 'Colorise les notes, les heatmaps et les moyennes affichées sur IMDb.' },
 		{ key: 'stremioCompactPanel', group: 'Stremio Web', title: 'Panneau compact', description: 'Isole la liste des sources et conserve son défilement indépendant.' },
+		{ key: 'stremioHidePlayIcon', group: 'Stremio Web', title: 'Sources sans bouton Play', description: 'Dans le panneau compact, masque le gros bouton de lecture et utilise sa place pour afficher les informations des sources avec retour à la ligne.' },
+		{ key: 'stremioStreamCards', group: 'Stremio Web', title: 'Sources en cartes', description: 'Réduit les marges du panneau compact et distingue chaque source avec une carte et un séparateur entre les caractéristiques et le titre. Affiche les informations avec retour à la ligne.' },
+		{ key: 'stremioTraktTheme', group: 'Stremio Web', title: 'Thème Trakt et détails colorés', description: 'Habille le panneau compact aux couleurs sombres de Trakt, colore les titres en violet et les tailles des fichiers en jaune doux, avec des lignes légèrement plus aérées.' },
 		{ key: 'newTabMovieDiscovery', group: 'Nouvel onglet', title: 'Film ou série aléatoire', description: 'Affiche une sélection visuelle aléatoire à partir des images TMDB.' },
 	]);
 

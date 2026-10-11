@@ -612,10 +612,10 @@ function getInnermostEpisodeSpoilerTextElement(spoiler) {
 
 function getSeasonEpisodeClickableTargets(element, context = null) {
 	if (!element) return [];
-	const footerInformation = element.closest('.trakt-card-footer-information');
+	const footerInformation = element.closest('.trakt-card-footer-information, .trakt-summary-card-titles');
 	if (footerInformation) {
-		const title = footerInformation.querySelector(':scope > .trakt-card-title');
-		const subtitle = footerInformation.querySelector(':scope > .trakt-card-subtitle');
+		const title = footerInformation.querySelector('.trakt-card-title');
+		const subtitle = footerInformation.querySelector('.trakt-card-subtitle');
 		const episodePattern = /S\s*\d+\s*[•·.-]\s*E\s*\d+/i;
 		const spoilerSelector = 'trakt-spoiler, [data-spoiler], [class*="spoiler"], [style*="blur"]';
 		const episodeTarget = [title, subtitle].find((candidate) => (
@@ -623,10 +623,11 @@ function getSeasonEpisodeClickableTargets(element, context = null) {
 		));
 
 		if (episodeTarget) {
-			const targets = [episodeTarget];
 			const companion = episodeTarget === title ? subtitle : title;
-			if (companion?.querySelector(spoilerSelector)) targets.push(companion);
-			return targets;
+			// Episode titles are spoiler-aware; series titles in Continue Watching are not.
+			// Use their shared container so its spacing remains part of the same link.
+			if (companion?.querySelector(spoilerSelector)) return [footerInformation];
+			return [episodeTarget];
 		}
 	}
 

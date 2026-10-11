@@ -59,6 +59,10 @@ test('settings load normalized values and private credentials on extension pages
 
 	assert.equal(values.traktStremioLinks, false);
 	assert.equal(values.traktRatingColors, true);
+	assert.equal(values.traktHideReactions, true);
+	assert.equal(values.stremioHidePlayIcon, true);
+	assert.equal(values.stremioStreamCards, true);
+	assert.equal(values.stremioTraktTheme, true);
 	assert.equal('unknownFeature' in values, false);
 	assert.equal(harness.settings.getTmdbCredential(), 'secret-token');
 	assert.deepEqual(harness.getRequestedKeys(), [storageKey, credentialKey]);
@@ -97,10 +101,14 @@ test('storage changes update the in-memory feature snapshot', async () => {
 	const listener = harness.getStorageListener();
 
 	listener({
-		'cinetrakt:feature-settings:v1': { newValue: { traktPosterLayout: false } },
+		'cinetrakt:feature-settings:v1': { newValue: { traktPosterLayout: false, traktHideReactions: false, stremioHidePlayIcon: false, stremioStreamCards: false, stremioTraktTheme: false } },
 	}, 'local');
 
 	assert.equal(harness.settings.isEnabled('traktPosterLayout'), false);
+	assert.equal(harness.settings.isEnabled('traktHideReactions'), false);
+	assert.equal(harness.settings.isEnabled('stremioHidePlayIcon'), false);
+	assert.equal(harness.settings.isEnabled('stremioStreamCards'), false);
+	assert.equal(harness.settings.isEnabled('stremioTraktTheme'), false);
 	assert.equal(harness.settings.isEnabled('traktStremioLinks'), true);
 });
 
@@ -110,7 +118,7 @@ test('every Trakt option belongs to a clear popup subcategory', () => {
 		.filter((feature) => feature.group === 'Trakt');
 	const categories = new Set(traktFeatures.map((feature) => feature.category));
 
-	assert.equal(traktFeatures.length, 9);
+	assert.equal(traktFeatures.length, 10);
 	assert.deepEqual(
 		[...categories].sort(),
 		['Affichage des fiches', 'Lecture et Stremio', 'Navigation', 'Notes et IMDb'].sort(),

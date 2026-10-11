@@ -69,6 +69,7 @@
       "run_at": "document_idle",
       "js": [
         "settings.js",
+        "stremio-formatting.js",
         "stremio.js"
       ],
       "matches": [
