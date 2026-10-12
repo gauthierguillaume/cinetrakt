@@ -10,8 +10,8 @@
 		webdl: 'WebDL', webrip: 'WebRip', hdr: 'HDR', hdr10: 'HDR10', hdr10plus: 'HDR10+',
 		dv: 'Dolby Vision', sdr: 'SDR', '10bit': '10 bit', ai: 'AI', digital: 'Dolby Digital',
 		digitalplus: 'Dolby Digital Plus', atmos: 'Dolby Atmos', truehd: 'Dolby TrueHD',
-		dts: 'DTS', dtshd: 'DTS-HD', dtshdma: 'DTS-HD Master Audio', dtsx: 'DTS:X',
-		aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3',
+		dts: 'DTS', dtses: 'DTS-ES', dtshd: 'DTS-HD', dtshdma: 'DTS-HD Master Audio', dtsx: 'DTS:X',
+		aac: 'AAC', opus: 'Opus', flac: 'FLAC', mp3: 'MP3', imax: 'IMAX',
 		'channels-20': '2.0', 'channels-21': '2.1', 'channels-51': '5.1',
 		'channels-61': '6.1', 'channels-71': '7.1',
 	});
@@ -63,7 +63,10 @@
 		} else {
 			// Trim decorative indentation, never rewrite languages or provider details.
 			row.textContent = line.replace(/^[\s\u2800]+|[\s\u2800]+$/gu, '');
-			if (globalThis.CineTraktStreamFormatting.getFileSizeRanges(line).length) row.classList.add('wos-stream-file-size');
+			if (globalThis.CineTraktStreamFormatting.getFileSizeRanges(line).length) {
+				row.classList.add('wos-stream-file-size');
+				row.textContent = globalThis.CineTraktStreamFormatting.formatFileSizeText(row.textContent);
+			}
 		}
 		return row;
 	}
@@ -95,6 +98,30 @@
 		const details = document.createElement('span');
 		details.textContent = provider.rest.trimStart();
 		row.appendChild(details);
+		return row;
+	}
+
+	function createAudioRow(line) {
+		const formatting = globalThis.CineTraktStreamFormatting;
+		if (formatting.getProviderPrefix(line)) return createProviderRow(line);
+		const ids = formatting.getTechnicalBadgeIds(line, 'audio');
+		if (ids.length) return createRow(line, ids, true);
+		const parts = formatting.getAudioChannelParts(line);
+		if (!parts.some((part) => part.id)) return createRow(line);
+		const row = createRow('');
+		for (const part of parts) {
+			if (part.id) row.appendChild(createBadge(part.id, true));
+			else row.appendChild(document.createTextNode(part.text));
+		}
+		return row;
+	}
+
+	function createEditionRow(line) {
+		const row = createRow('');
+		for (const part of globalThis.CineTraktStreamFormatting.getEditionBadgeParts(line)) {
+			if (part.id) row.appendChild(createBadge(part.id, true));
+			else row.appendChild(document.createTextNode(part.text));
+		}
 		return row;
 	}
 
@@ -134,11 +161,14 @@
 			}
 			render(original, (text) => {
 				const lines = text.split(/\r\n|\r|\n/);
+				const sourceLines = new Set(formatting.getSourceLineIndexes(text));
 				const presentation = document.createElement('div');
 				presentation.className = 'wos-stream-badge-details';
-				lines.forEach((line) => {
+				lines.forEach((line, index) => {
 					const ids = formatting.getBadgeIds(line);
-					presentation.appendChild(ids.length ? createRow(line, ids) : createVideoRow(line));
+					const row = ids.length ? createRow(line, ids) : createVideoRow(line);
+					if (sourceLines.has(index)) row.classList.add('wos-stream-source-row');
+					presentation.appendChild(row);
 				});
 				return presentation;
 			});
@@ -149,7 +179,7 @@
 				const heading = document.createElement('div');
 				heading.className = 'wos-stream-heading-details';
 				groups.header.forEach((line, index) => {
-					const row = createRow(line);
+					const row = index === 0 ? createRow(line) : createEditionRow(line);
 					row.classList.add(index === 0 ? 'wos-stream-title' : 'wos-stream-edition');
 					heading.appendChild(row);
 				});
@@ -159,8 +189,7 @@
 					const details = document.createElement('div');
 					details.className = 'wos-stream-technical-details';
 					detailLines.forEach((line) => {
-						const ids = formatting.getTechnicalBadgeIds(line, 'audio');
-						details.appendChild(ids.length ? createRow(line, ids, true) : createProviderRow(line));
+						details.appendChild(createAudioRow(line));
 					});
 					presentation.appendChild(details);
 				}

@@ -159,6 +159,9 @@
 			}
 
 			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="info-container-"] {
+				display: flex !important;
+				flex-direction: column !important;
+				justify-content: center !important;
 				width: 7rem !important;
 				max-width: 34% !important;
 				min-width: 0 !important;
@@ -249,11 +252,17 @@
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge img {
 				width: 100% !important; height: 100% !important; object-fit: contain;
 			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-source-row {
+				color: #68bfff;
+				/* Tint the entire source row so text and images use exactly the same blue. */
+				filter: brightness(0) saturate(100%) invert(70%) sepia(34%) saturate(1140%) hue-rotate(173deg) brightness(104%) contrast(102%);
+			}
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-technical-badge {
 				width: 58px; height: 22px; flex: 0 1 auto;
 			}
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge-details .wos-stream-technical-badge { width: 70px; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge[data-badge^="channels-"] { width: 25px; height: 20px; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge[data-badge="imax"] { width: 44px; height: 18px; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge:is([data-badge="opus"], [data-badge="aac"], [data-badge="flac"], [data-badge="mp3"], [data-badge="ai"]) { width: 48px; height: 17px; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-description-details {
 				flex: 1; min-width: 0; align-self: stretch; font-size: .95em;
@@ -263,6 +272,7 @@
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-description-details .wos-stream-badge-row {
 				justify-content: flex-start; align-items: center; text-align: left; gap: 5px 7px;
 			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-title { font-size: 1.18em; }
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} .wos-stream-title { color: #a855f7; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} :is(.wos-stream-heading-details, .wos-stream-technical-details) {
 				flex: 1; display: flex; flex-direction: column; justify-content: center;
@@ -271,7 +281,10 @@
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-technical-details { border-top: 1px solid rgba(192,132,252,.16); }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-provider-row > span { flex: 1; min-width: 0; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} img.wos-stream-provider-logo { width: 20px !important; height: 20px !important; flex: 0 0 20px; object-fit: contain; }
-			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-file-size { font-size: 1.2em; font-weight: 800; font-variant-numeric: tabular-nums; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-file-size {
+				font-family: "Segoe UI", Arial, sans-serif; font-size: 1.28em; font-weight: 800;
+				font-variant-numeric: lining-nums tabular-nums; letter-spacing: .015em;
+			}
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} .wos-stream-file-size { color: #f2cc60; }
 
 			html.${ACTIVE_CLASS} .${ROOT_CLASS}::-webkit-scrollbar {

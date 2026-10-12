@@ -1,7 +1,7 @@
 {
   "name": "CineTrakt",
   "description": "Ajoute des boutons Stremio/Trakt et les couleurs IMDb/Trakt.",
-  "version": "0.4.52",
+  "version": "0.4.53",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"

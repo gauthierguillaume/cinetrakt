@@ -1,13 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../stremio-formatting.js');
-const { getFileSizeRanges, getTitleRange, getBadgeIds, getTechnicalBadgeIds, getVideoBadgeParts,
+const { getFileSizeRanges, formatFileSizeText, getTitleRange, getBadgeIds, getSourceLineIndexes, getTechnicalBadgeIds, getVideoBadgeParts, getAudioChannelParts, getEditionBadgeParts,
 	getProviderPrefix, getDescriptionGroups } = globalThis.CineTraktStreamFormatting;
 
 test('file sizes preserve offsets for addon typography and decimal units', () => {
 	const text = '⠀⠀𝟭𝟯𝟰 ɢʙ\n866 ᴍʙ\n1.5 GiB\n2,4 Go\n1080p\n10bit\n7.1';
 	assert.deepEqual(getFileSizeRanges(text).map(({ start, end }) => text.slice(start, end)),
 		['𝟭𝟯𝟰 ɢʙ', '866 ᴍʙ', '1.5 GiB', '2,4 Go']);
+});
+
+test('file size presentation removes decorative glyphs without changing values or units', () => {
+	assert.equal(formatFileSizeText('𝟰𝟭 ɢʙ'), '41 GB');
+	assert.equal(formatFileSizeText('𝟴𝟮𝟲 ᴍʙ'), '826 MB');
+	assert.equal(formatFileSizeText('1,5 GiB / 𝟮.𝟰 ɢʙ'), '1,5 GiB / 2.4 GB');
+	assert.equal(formatFileSizeText('🇫🇷 𝙏𝙞𝙩𝙡𝙚 7.1'), '🇫🇷 𝙏𝙞𝙩𝙡𝙚 7.1');
 });
 
 test('stream titles use the whole logical line including Unicode and punctuation', () => {
@@ -28,6 +35,16 @@ test('badges recognize only their exact resolution or source including addon typ
 		['Remux BluRay', ['remux', 'bluray']],
 	];
 	for (const [line, expected] of cases) assert.deepEqual(getBadgeIds(line), expected, line);
+});
+
+test('source rows include unknown text and DVD even when resolution is absent', () => {
+	for (const [text, indexes] of [
+		['4K\nBluRay\n41 GB\nHDR\n🇫🇷', [1]],
+		['1080p\nUnknown source\n826 MB\nDV', [1]],
+		['⠀𝘿𝙑𝘿 ʳ ᵉ ᵐ ᵘ ˣ\n⠀⠀𝟱 ɢʙ\n🇫🇷', [0]],
+		['DVD\n2 GB\n🇫🇷', [0]], ['\n480p\nDVD\n966 MB', [2]],
+		['9 GB\nHDR\n🇫🇷', []], ['1080p\n826 MB\n🇫🇷', []],
+	]) assert.deepEqual(getSourceLineIndexes(text), indexes, text);
 });
 
 test('unknown or ambiguous characteristics never become a different badge', () => {
@@ -54,10 +71,23 @@ test('audio logos handle addon typography, codecs and exact channel layouts', ()
 		['DDP 5.1', ['digitalplus', 'channels-51']], ['DTS-HD MA 6.1', ['dtshdma', 'channels-61']],
 		['Dolby TrueHD Atmos 7.1', ['truehd', 'atmos', 'channels-71']],
 		['DTS:X', ['dtsx']], ['DTS-HD', ['dtshd']], ['DTS', ['dts']],
+		['𝕕𝕥𝕤 ☰S　𝟱.𝟭', ['dtses', 'channels-51']], ['DTS-ES 6.1', ['dtses', 'channels-61']],
 		['𝗔𝗔𝗖　𝟮.𝟬', ['aac', 'channels-20']], ['𝙤𝙥𝙪𝙨　𝟱.𝟭', ['opus', 'channels-51']],
 		['FLAC MP3', ['flac', 'mp3']],
 	];
 	for (const [line, expected] of cases) assert.deepEqual(getTechnicalBadgeIds(line, 'audio'), expected, line);
+});
+
+test('unknown audio variants retain their qualifiers beside exact channel logos', () => {
+	for (const [line, expected] of [
+		['DTS-HD HR 𝟱.𝟭', ['channels-51']], ['AAC LC 𝟮.𝟬', ['channels-20']],
+		['Unknown 7.1 5.1 2.0', ['channels-71', 'channels-51', 'channels-20']],
+		['DTS-ES Matrix 6.1', ['channels-61']], ['5.10 7.1.4 filename.5.1.mkv', []],
+	]) {
+		const parts = getAudioChannelParts(line);
+		assert.deepEqual(parts.filter((part) => part.id).map((part) => part.id), expected, line);
+		assert.equal(parts.map((part) => part.text).join(''), line);
+	}
 });
 
 test('video logos survive AI and unknown adjacent tags without changing their meaning', () => {
@@ -114,11 +144,22 @@ test('description grouping keeps title and edition together before technical det
 	});
 });
 
+test('IMAX edition logos replace only the exact tag while preserving the year and other editions', () => {
+	for (const source of ['2026 IMAX', '𝟮𝟬𝟮𝟲　ɪᴍᴀx　Extended Edition', 'IMAX']) {
+		const parts = getEditionBadgeParts(source);
+		assert.deepEqual(parts.filter((part) => part.id).map((part) => part.id), ['imax']);
+		assert.equal(parts.map((part) => part.text).join(''), source);
+	}
+	for (const source of ['2026', '2026 IMAX-like', '2026 IMAXEnhanced', '2026 IMAX-Enhanced']) {
+		assert.equal(getEditionBadgeParts(source).some((part) => part.id), false, source);
+	}
+});
+
 test('every supported technical logo is local and exposed only to Stremio', () => {
 	const fs = require('node:fs');
 	const path = require('node:path');
 	const ids = ['hdr', 'hdr10', 'hdr10plus', 'dv', 'sdr', '10bit', 'ai', 'digital', 'digitalplus',
-		'atmos', 'truehd', 'dts', 'dtshd', 'dtshdma', 'dtsx', 'aac', 'opus', 'flac', 'mp3',
+		'atmos', 'truehd', 'dts', 'dtses', 'dtshd', 'dtshdma', 'dtsx', 'aac', 'opus', 'flac', 'mp3', 'imax',
 		'channels-20', 'channels-21', 'channels-51', 'channels-61', 'channels-71'];
 	for (const id of ids) {
 		const svg = fs.readFileSync(path.join(__dirname, `../assets/stream-badges/${id}.svg`), 'utf8');
@@ -221,4 +262,45 @@ test('updated streams rebuild their logos and cleanup restores tooltips', () => 
 	badges.clearAll();
 	assert.equal(panel.querySelectorAll('[title]').length, 3);
 	assert.equal(panel.querySelectorAll('.wos-stream-badge-details').length, 0);
+});
+
+test('audio presentation uses consistent channel badges and preserves unsupported codec and provider text', () => {
+	const { panel, info, description, badges } = streamFixture();
+	info.textContent = '4K\n𝟰𝟭 ɢʙ';
+	description.textContent = 'Toy Story\n1995\n𝕕𝕥𝕤 ☰S　𝟱.𝟭\nAAC LC 𝟮.𝟬\n❖ [ 5.1 ] tracker';
+	badges.apply(panel, true);
+	assert.equal(panel.querySelector('.wos-stream-file-size').textContent, '41 GB');
+	assert.deepEqual(panel.querySelectorAll('.wos-stream-technical-badge').map((item) => item.dataset.badge),
+		['dtses', 'channels-51', 'channels-20']);
+	assert.ok(panel.querySelector('.wos-stream-technical-details').textContent.includes('AAC LC'));
+	assert.equal(panel.querySelector('.wos-stream-provider-row').textContent, '[ 5.1 ] tracker');
+	badges.clearAll();
+	assert.equal(info.textContent, '4K\n𝟰𝟭 ɢʙ');
+});
+
+test('source presentation marks both text and logo rows without coloring resolution, size or languages', () => {
+	const { panel, info, badges } = streamFixture();
+	for (const source of ['DVD', 'DVD Remux', 'Unknown source', 'BluRay']) {
+		info.textContent = `1080p\n${source}\n2 GB\nHDR\n🇫🇷`;
+		badges.apply(panel, true);
+		const rows = panel.querySelectorAll('.wos-stream-source-row');
+		assert.equal(rows.length, 1);
+		if (source === 'BluRay') assert.equal(rows[0].querySelector('.wos-stream-badge').dataset.badge, 'bluray');
+		else assert.equal(rows[0].textContent, source);
+	}
+	badges.clearAll();
+});
+
+test('IMAX logo is confined to the edition row and native stream text is restored', () => {
+	const { panel, description, badges } = streamFixture();
+	const text = 'IMAX movie title\n2026 IMAX Extended Edition\nAtmos 5.1\n❖ IMAX provider';
+	description.textContent = text;
+	badges.apply(panel, true);
+	const edition = panel.querySelector('.wos-stream-edition');
+	assert.equal(edition.querySelector('.wos-stream-badge').dataset.badge, 'imax');
+	assert.equal(edition.textContent, '2026  Extended Edition');
+	assert.equal(panel.querySelectorAll('.wos-stream-technical-badge').filter((badge) => badge.dataset.badge === 'imax').length, 1);
+	assert.equal(panel.querySelector('.wos-stream-title').textContent, 'IMAX movie title');
+	badges.clearAll();
+	assert.equal(description.textContent, text);
 });
