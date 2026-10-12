@@ -14,6 +14,47 @@
 	let currentTmdbCredential = '';
 	let savedTmdbCredential = '';
 	let tmdbCredentialInput = null;
+	let activeHelp = null;
+	let helpCloseTimer = null;
+
+	function hideFeatureHelp() {
+		clearTimeout(helpCloseTimer);
+		if (activeHelp) activeHelp.description.hidden = true;
+		activeHelp = null;
+	}
+
+	function showFeatureHelp(title, description) {
+		clearTimeout(helpCloseTimer);
+		if (activeHelp?.description !== description) hideFeatureHelp();
+		activeHelp = { title, description };
+		description.hidden = false;
+		const anchor = title.getBoundingClientRect();
+		const box = description.getBoundingClientRect();
+		const inset = 10;
+		const left = Math.max(inset, Math.min(anchor.left, document.documentElement.clientWidth - box.width - inset));
+		const below = anchor.bottom + 8;
+		const top = below + box.height <= document.documentElement.clientHeight - inset
+			? below : Math.max(inset, anchor.top - box.height - 8);
+		description.style.left = `${left}px`;
+		description.style.top = `${top}px`;
+	}
+
+	function scheduleHideFeatureHelp() {
+		clearTimeout(helpCloseTimer);
+		helpCloseTimer = setTimeout(() => {
+			if (activeHelp && !activeHelp.title.matches(':hover, :focus') && !activeHelp.description.matches(':hover')) hideFeatureHelp();
+		}, 100);
+	}
+
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape' && activeHelp) {
+			hideFeatureHelp();
+			event.preventDefault();
+			event.stopPropagation();
+		}
+	}, true);
+	window.addEventListener('resize', hideFeatureHelp);
+	document.querySelector('main').addEventListener('scroll', hideFeatureHelp);
 
 	function getGroupTheme(groupName) {
 		if (groupName === 'IMDb') return 'imdb';
@@ -63,14 +104,29 @@
 	function createFeatureRow(feature) {
 		const row = document.createElement('div');
 		row.className = 'feature-row';
-		row.title = feature.description;
 		const copy = document.createElement('div');
 		copy.className = 'feature-copy';
-		const title = document.createElement('strong');
+		const title = document.createElement('button');
+		title.type = 'button';
+		title.className = 'feature-title';
 		title.textContent = feature.title;
 		const description = document.createElement('p');
+		description.className = 'feature-tooltip';
+		description.id = `feature-description-${feature.key}`;
+		description.setAttribute('role', 'tooltip');
+		description.hidden = true;
 		description.textContent = feature.description;
-		copy.append(title, description);
+		title.setAttribute('aria-describedby', description.id);
+		title.addEventListener('pointerenter', () => showFeatureHelp(title, description));
+		title.addEventListener('focus', () => showFeatureHelp(title, description));
+		title.addEventListener('click', () => showFeatureHelp(title, description));
+		title.addEventListener('pointerleave', scheduleHideFeatureHelp);
+		title.addEventListener('blur', scheduleHideFeatureHelp);
+		description.addEventListener('pointerenter', () => clearTimeout(helpCloseTimer));
+		description.addEventListener('pointerleave', scheduleHideFeatureHelp);
+		copy.append(title);
+		// Keep tooltips outside the cards so their complete text cannot be clipped.
+		document.body.appendChild(description);
 
 		const label = document.createElement('label');
 		label.className = 'switch';
@@ -79,6 +135,7 @@
 		input.type = 'checkbox';
 		input.dataset.feature = feature.key;
 		input.setAttribute('aria-label', feature.title);
+		input.setAttribute('aria-describedby', description.id);
 		input.addEventListener('change', () => {
 			currentValues[feature.key] = input.checked;
 			updateSummary();
@@ -109,9 +166,9 @@
 		const container = document.createElement('div');
 		container.className = 'feature-subgroups';
 		const categoryColumns = [
-			['Lecture et Stremio'],
+			['Lecture et Stremio', 'Navigation'],
 			['Notes et IMDb'],
-			['Affichage des fiches', 'Navigation'],
+			['Affichage des fiches'],
 		];
 		categoryColumns.forEach((categoryNames) => {
 			const column = document.createElement('div');

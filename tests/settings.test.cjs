@@ -60,9 +60,7 @@ test('settings load normalized values and private credentials on extension pages
 	assert.equal(values.traktStremioLinks, false);
 	assert.equal(values.traktRatingColors, true);
 	assert.equal(values.traktHideReactions, true);
-	assert.equal(values.stremioHidePlayIcon, true);
-	assert.equal(values.stremioStreamCards, true);
-	assert.equal(values.stremioTraktTheme, true);
+	assert.equal(values.stremioStreamAppearance, true);
 	assert.equal('unknownFeature' in values, false);
 	assert.equal(harness.settings.getTmdbCredential(), 'secret-token');
 	assert.deepEqual(harness.getRequestedKeys(), [storageKey, credentialKey]);
@@ -101,14 +99,12 @@ test('storage changes update the in-memory feature snapshot', async () => {
 	const listener = harness.getStorageListener();
 
 	listener({
-		'cinetrakt:feature-settings:v1': { newValue: { traktPosterLayout: false, traktHideReactions: false, stremioHidePlayIcon: false, stremioStreamCards: false, stremioTraktTheme: false } },
+		'cinetrakt:feature-settings:v1': { newValue: { traktPosterLayout: false, traktHideReactions: false, stremioHidePlayIcon: false, stremioStreamCards: false, stremioTraktTheme: false, stremioStreamBadges: false } },
 	}, 'local');
 
 	assert.equal(harness.settings.isEnabled('traktPosterLayout'), false);
 	assert.equal(harness.settings.isEnabled('traktHideReactions'), false);
-	assert.equal(harness.settings.isEnabled('stremioHidePlayIcon'), false);
-	assert.equal(harness.settings.isEnabled('stremioStreamCards'), false);
-	assert.equal(harness.settings.isEnabled('stremioTraktTheme'), false);
+	assert.equal(harness.settings.isEnabled('stremioStreamAppearance'), false);
 	assert.equal(harness.settings.isEnabled('traktStremioLinks'), true);
 });
 
@@ -124,4 +120,31 @@ test('every Trakt option belongs to a clear popup subcategory', () => {
 		['Affichage des fiches', 'Lecture et Stremio', 'Navigation', 'Notes et IMDb'].sort(),
 	);
 	assert.ok(traktFeatures.every((feature) => feature.title && feature.description));
+});
+
+test('Stremio exposes only compact panel and unified appearance switches', () => {
+	const { settings } = loadSettings();
+	assert.deepEqual(Array.from(settings.DEFINITIONS).filter((feature) => feature.group === 'Stremio Web')
+		.map((feature) => feature.key), ['stremioCompactPanel', 'stremioStreamAppearance']);
+	assert.deepEqual(Object.keys(settings.DEFAULTS).sort(), Array.from(settings.DEFINITIONS).map((feature) => feature.key).sort());
+});
+
+test('unified appearance migrates old preferences and saves only the current options', async () => {
+	const legacyOff = { stremioHidePlayIcon: false, stremioStreamCards: false,
+		stremioTraktTheme: false, stremioStreamBadges: false };
+	const storageKey = 'cinetrakt:feature-settings:v1';
+	for (const [preferences, expected] of [
+		[legacyOff, false], [{ ...legacyOff, stremioStreamCards: true }, true],
+		[{ stremioStreamCards: false }, true],
+		[{ ...legacyOff, stremioStreamAppearance: true }, true],
+		[{ stremioStreamAppearance: false, stremioCompactPanel: true }, false],
+	]) {
+		const harness = loadSettings({ stored: { [storageKey]: preferences } });
+		const values = await harness.settings.ready;
+		assert.equal(values.stremioStreamAppearance, expected);
+		assert.equal(values.stremioCompactPanel, true);
+		await harness.settings.save(values);
+		assert.equal(harness.writes[0][storageKey].stremioStreamAppearance, expected);
+		assert.ok(Object.keys(legacyOff).every((key) => !(key in harness.writes[0][storageKey])));
+	}
 });

@@ -1,7 +1,7 @@
 {
   "name": "CineTrakt",
   "description": "Ajoute des boutons Stremio/Trakt et les couleurs IMDb/Trakt.",
-  "version": "0.4.51",
+  "version": "0.4.52",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"
@@ -58,6 +58,7 @@
         "trakt-ratings.js",
         "trakt-poster-layout.js",
         "trakt-soundtrack.js",
+        "trakt-collection-utils.js",
         "trakt-customizations.js",
         "trakt.js"
       ],
@@ -70,6 +71,8 @@
       "js": [
         "settings.js",
         "stremio-formatting.js",
+        "stremio-badges.js",
+        "extension-protocol.js",
         "stremio.js"
       ],
       "matches": [
@@ -87,6 +90,12 @@
       "matches": [
         "https://open.spotify.com/embed*"
       ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/stream-badges/*.png", "assets/stream-badges/*.svg", "assets/stream-providers/*.png"],
+      "matches": ["https://web.stremio.com/*"]
     }
   ],
   "permissions": [

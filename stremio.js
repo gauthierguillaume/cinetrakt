@@ -23,6 +23,7 @@
 	const NO_PLAY_CLASS = 'wos-stremio-sources-no-play';
 	const STREAM_CARDS_CLASS = 'wos-stremio-source-cards';
 	const THEME_CLASS = 'wos-stremio-trakt-theme';
+	const POINTER_OVER_CLASS = 'wos-stream-pointer-over';
 	const TITLE_HIGHLIGHT = 'cinetrakt-stream-title';
 	const SIZE_HIGHLIGHT = 'cinetrakt-stream-size';
 	const DISCOVERY_RETRY_DELAYS = Object.freeze([80, 160, 320, 640, 1200, 2400, 4000]);
@@ -34,6 +35,7 @@
 	let retryTimer = null;
 	let retryIndex = 0;
 	let animationFrame = null;
+	let hoveredStream = null;
 
 	function hasPanelFlag() {
 		try {
@@ -150,7 +152,7 @@
 				transition: background-color 120ms ease, border-color 120ms ease;
 			}
 
-			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:hover,
+			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"].${POINTER_OVER_CLASS},
 			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:focus-visible {
 				background: rgba(168, 85, 247, 0.12) !important;
 				border-color: rgba(192, 132, 252, 0.55) !important;
@@ -192,14 +194,19 @@
 			}
 
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] {
+				/* Keep idle cards dark; use Trakt's official collection fill on hover. */
 				background: #100e13 !important;
-				border-color: rgba(192, 132, 252, 0.18) !important;
+				border: 0 !important;
+				border-radius: 12px !important;
+				outline: 2px solid transparent !important;
+				box-shadow: 1px 1px 4px 2px color-mix(in srgb, oklch(14% .007 300) 10%, transparent) !important;
+				transition: outline-color 150ms ease-in-out !important;
 			}
 
-			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:hover,
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"].${POINTER_OVER_CLASS},
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:focus-visible {
-				background: #281b33 !important;
-				border-color: #a855f7 !important;
+				background: color-mix(in srgb, oklch(35.5% .1394 314.2) 40%, color-mix(in srgb, oklch(19.5% .009 300) 97%, oklch(29% .1128 314.2))) !important;
+				outline-color: oklch(56.1% .205 314.2) !important;
 			}
 
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] [class*="addon-name-"],
@@ -221,6 +228,52 @@
 				}
 			}
 
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge-original,
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="description-container-"].wos-stream-badge-original {
+				display: none !important;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge-details {
+				display: flex; flex-direction: column; align-items: center; gap: 4px;
+				width: 100%; min-width: 0; font-size: 0.88em; line-height: 1.4; color: #ebe7ef;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge-row {
+				display: flex; flex-wrap: wrap; justify-content: center; gap: 4px;
+				white-space: pre-wrap; overflow-wrap: anywhere; text-align: center;
+				flex-shrink: 0; overflow: visible;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge {
+				display: flex; align-items: center; justify-content: center;
+				width: 80px; height: 26px; padding: 0;
+				border: 0; background: none;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge img {
+				width: 100% !important; height: 100% !important; object-fit: contain;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-technical-badge {
+				width: 58px; height: 22px; flex: 0 1 auto;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge-details .wos-stream-technical-badge { width: 70px; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge[data-badge^="channels-"] { width: 25px; height: 20px; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-badge:is([data-badge="opus"], [data-badge="aac"], [data-badge="flac"], [data-badge="mp3"], [data-badge="ai"]) { width: 48px; height: 17px; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-description-details {
+				flex: 1; min-width: 0; align-self: stretch; font-size: .95em;
+				display: flex; flex-direction: column; min-height: min-content; overflow: visible;
+				white-space: pre-wrap; overflow-wrap: anywhere; color: #ebe7ef; line-height: 1.5;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-description-details .wos-stream-badge-row {
+				justify-content: flex-start; align-items: center; text-align: left; gap: 5px 7px;
+			}
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} .wos-stream-title { color: #a855f7; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} :is(.wos-stream-heading-details, .wos-stream-technical-details) {
+				flex: 1; display: flex; flex-direction: column; justify-content: center;
+				gap: 6px; padding: 7px 0; min-width: 0; min-height: min-content; overflow: visible;
+			}
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-technical-details { border-top: 1px solid rgba(192,132,252,.16); }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-provider-row > span { flex: 1; min-width: 0; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} img.wos-stream-provider-logo { width: 20px !important; height: 20px !important; flex: 0 0 20px; object-fit: contain; }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-file-size { font-size: 1.2em; font-weight: 800; font-variant-numeric: tabular-nums; }
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} .wos-stream-file-size { color: #f2cc60; }
+
 			html.${ACTIVE_CLASS} .${ROOT_CLASS}::-webkit-scrollbar {
 				width: 8px !important;
 			}
@@ -238,6 +291,7 @@
 	}
 
 	function clearPanelState({ resetTracking = false } = {}) {
+		setHoveredStream(null);
 		document.querySelectorAll(`.${ROOT_CLASS}`).forEach((element) => element.classList.remove(ROOT_CLASS));
 		document.querySelectorAll(`.${HIDDEN_CLASS}`).forEach((element) => element.classList.remove(HIDDEN_CLASS));
 		document.documentElement.classList.remove(ACTIVE_CLASS);
@@ -245,6 +299,7 @@
 		document.documentElement.classList.remove(STREAM_CARDS_CLASS);
 		document.documentElement.classList.remove(THEME_CLASS);
 		clearStreamHighlights();
+		globalThis.CineTraktStreamBadges.clearAll();
 
 		if (resetTracking) {
 			lastPanel = null;
@@ -361,7 +416,7 @@
 	}
 
 	function applyStreamHighlights(panelRoot) {
-		if (!globalThis.CineTraktSettings.isEnabled('stremioTraktTheme')) {
+		if (!globalThis.CineTraktSettings.isEnabled('stremioStreamAppearance')) {
 			clearStreamHighlights();
 			return;
 		}
@@ -416,12 +471,11 @@
 
 		hideEverythingExcept(panelRoot);
 		document.documentElement.classList.add(ACTIVE_CLASS);
-		document.documentElement.classList.toggle(NO_PLAY_CLASS,
-			globalThis.CineTraktSettings.isEnabled('stremioHidePlayIcon'));
-		document.documentElement.classList.toggle(STREAM_CARDS_CLASS,
-			globalThis.CineTraktSettings.isEnabled('stremioStreamCards'));
-		document.documentElement.classList.toggle(THEME_CLASS,
-			globalThis.CineTraktSettings.isEnabled('stremioTraktTheme'));
+		const enhancedAppearance = globalThis.CineTraktSettings.isEnabled('stremioStreamAppearance');
+		document.documentElement.classList.toggle(NO_PLAY_CLASS, enhancedAppearance);
+		document.documentElement.classList.toggle(STREAM_CARDS_CLASS, enhancedAppearance);
+		document.documentElement.classList.toggle(THEME_CLASS, enhancedAppearance);
+		globalThis.CineTraktStreamBadges.apply(panelRoot, enhancedAppearance);
 		applyStreamHighlights(panelRoot);
 		trackPanelScroll(panelRoot);
 
@@ -467,9 +521,52 @@
 		});
 	}
 
+	function setHoveredStream(card) {
+		if (hoveredStream === card) return;
+		hoveredStream?.classList.remove(POINTER_OVER_CLASS);
+		hoveredStream = card;
+		hoveredStream?.classList.add(POINTER_OVER_CLASS);
+	}
+
+	function trackStreamPointer() {
+		// Chromium can retain :hover when crossing directly into an adjacent window.
+		// Pointer exit events clear our visual state even while that CSS state is stale.
+		let lastPointerAt = 0;
+		const update = (event) => {
+			lastPointerAt = Date.now();
+			setHoveredStream(event.target?.closest?.(`.${ROOT_CLASS} a[class*="stream-container-"]`) || null);
+		};
+		const clear = () => setHoveredStream(null);
+		// Vivaldi may omit exit events altogether when crossing to the Trakt window.
+		const handlePointerReturn = (message) => {
+			if (message?.type === globalThis.CineTraktExtensionProtocol.MESSAGE_TYPES.CLEAR_STREMIO_STREAM_HOVER
+				&& Number.isFinite(message.at) && message.at >= lastPointerAt) clear();
+		};
+		chrome.runtime.onMessage.addListener(handlePointerReturn);
+		const exit = (event) => { if (!event.relatedTarget) clear(); };
+		const listeners = [
+			[document, 'pointerover', update],
+			[document, 'pointermove', update],
+			[document, 'pointerout', exit],
+			[document.documentElement, 'pointerleave', clear],
+			[window, 'mouseout', exit],
+			[window, 'blur', clear],
+		];
+		listeners.forEach(([target, type, handler]) => target.addEventListener(type, handler, { passive: true }));
+		return () => {
+			chrome.runtime.onMessage.removeListener(handlePointerReturn);
+			listeners.forEach(([target, type, handler]) => target.removeEventListener(type, handler));
+			clear();
+		};
+	}
+
 	function start() {
-		const observer = new MutationObserver(scheduleApply);
-		observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+		const stopPointerTracking = trackStreamPointer();
+		const observer = new MutationObserver((mutations) => {
+			if (mutations.some((mutation) => !mutation.target.closest?.('[data-cinetrakt-stream-presentation]')
+				&& !(mutation.target.parentElement?.closest('[data-cinetrakt-stream-presentation]')))) scheduleApply();
+		});
+		observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['title'] });
 
 		const handleRouteChange = () => {
 			clearDiscoveryRetry();
@@ -481,7 +578,9 @@
 		globalThis.navigation?.addEventListener('currententrychange', handleRouteChange);
 
 		window.addEventListener('resize', scheduleApply, { passive: true });
+		globalThis.CineTraktSettings.onChange(scheduleApply);
 		window.addEventListener('pagehide', () => {
+			stopPointerTracking();
 			observer.disconnect();
 			clearDiscoveryRetry();
 			if (animationFrame !== null) cancelAnimationFrame(animationFrame);

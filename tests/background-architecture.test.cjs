@@ -21,7 +21,7 @@ test('Trakt IMDb resolution uses the official API for trusted app senders', () =
 
 test('Stremio requests are limited to trusted Trakt senders and valid final URLs', () => {
 	assert.match(source, /new URL\(String\(value \|\| ""\)\)\.origin === expectedOrigin/);
-	assert.equal((source.match(/hasExactOrigin\(senderUrl, TRAKT_APP_ORIGIN\)/g) || []).length, 3);
+	assert.equal((source.match(/hasExactOrigin\(senderUrl, TRAKT_APP_ORIGIN\)/g) || []).length, 4);
 	assert.match(source, /!isStremioWebUrl\(message\.url\)/);
 });
 

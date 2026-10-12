@@ -100,13 +100,17 @@ function findCinetraktOfficialCollectionCard() {
 	const officialCards = popularListsSection.querySelectorAll(
 		'.trakt-list-summary-card[data-variant="official"]',
 	);
-	for (const officialCard of officialCards) {
-		if (!/@Trakt/i.test(officialCard.textContent || '')
-			|| officialCard.querySelectorAll('img').length < 2) continue;
-		return officialCard.closest('.trakt-card');
-	}
-
-	return null;
+	const candidates = Array.from(officialCards, (officialCard) => {
+		const titleLink = officialCard.querySelector('.list-content > a[href]');
+		return {
+			href: titleLink?.getAttribute('href'),
+			title: getCleanText(titleLink?.textContent || ''),
+			variant: officialCard.getAttribute('data-variant'),
+			owner: getCleanText(officialCard.querySelector('.owner-item p:last-child')?.textContent || ''),
+			card: officialCard.closest('.trakt-card'),
+		};
+	});
+	return globalThis.CineTraktCollectionUtils.findUniqueOfficialMovieCollection(candidates)?.card || null;
 }
 
 function restoreCinetraktCollectionRenderProbe() {
@@ -292,7 +296,11 @@ function placeCinetraktOfficialCollectionCard() {
 	normalizeCinetraktSvgViewBoxes(collectionCard);
 	const collectionCardCopy = collectionCard.cloneNode(true);
 	collectionCardCopy.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
-	collectionCardCopy.querySelectorAll('img').forEach((image) => image.setAttribute('loading', 'eager'));
+	collectionCardCopy.querySelectorAll('img').forEach((image) => {
+		image.setAttribute('loading', 'eager');
+		// Cloned images have no Svelte load handler to finish the opacity animation.
+		image.classList.remove('image-animation-enabled');
+	});
 	normalizeCinetraktSvgViewBoxes(collectionCardCopy);
 	revealCinetraktCollectionTitle(collectionCardCopy);
 	restoreCinetraktCollectionRenderProbe();

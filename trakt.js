@@ -45,10 +45,27 @@
 
 	if (window.location.hostname !== 'app.trakt.tv') return;
 
+	let lastPointerNotice = 0;
+	const notifyPointerReturn = () => {
+		const at = Date.now();
+		if (at - lastPointerNotice < 150 || !isFeatureEnabled('stremioCompactPanel')) return;
+		lastPointerNotice = at;
+		try {
+			chrome.runtime.sendMessage({
+				type: globalThis.CineTraktExtensionProtocol.MESSAGE_TYPES.CLEAR_STREMIO_STREAM_HOVER,
+				at,
+			}, () => { void chrome.runtime.lastError; });
+		} catch { /* Extension may have been reloaded while this page remains open. */ }
+	};
+	document.addEventListener('pointermove', notifyPointerReturn, { passive: true });
+	document.addEventListener('pointerover', notifyPointerReturn, { passive: true });
+
 	window.addEventListener('message', soundtrack.handleEmbedMessage);
 	window.addEventListener('resize', () => posterLayout.schedule(80), { passive: true });
 	window.visualViewport?.addEventListener('resize', () => posterLayout.schedule(80), { passive: true });
 	window.addEventListener('pagehide', () => {
+		document.removeEventListener('pointermove', notifyPointerReturn);
+		document.removeEventListener('pointerover', notifyPointerReturn);
 		soundtrack.cleanup({ pause: isFeatureEnabled('traktSoundtrack') });
 		posterLayout.cleanup();
 	}, { once: true });

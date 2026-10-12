@@ -38,17 +38,33 @@ test('extension HTML pages only reference local files that exist', () => {
 	}
 });
 
-test('popup feature descriptions remain fully readable without an inner scrollbar', () => {
+test('popup reserves a stable size before settings render instead of shrinking with its initial viewport', () => {
+	const css = fs.readFileSync(path.join(root, 'popup.css'), 'utf8');
+	for (const selector of ['html', 'body']) {
+		const rule = css.match(new RegExp(`(?:^|\\n)${selector}\\s*\\{([^}]+)\\}`))?.[1] || '';
+		assert.match(rule, /(?:^|[;\s])width:\s*800px\s*;/);
+		assert.match(rule, /(?:^|[;\s])height:\s*600px\s*;/);
+		assert.doesNotMatch(rule, /\b(?:vw|vh)\b|(?:min|max)-(?:width|height):/);
+	}
+});
+
+test('popup keeps descriptions in bounded tooltips and allows access if content grows', () => {
 	const css = fs.readFileSync(path.join(root, 'popup.css'), 'utf8');
 	const html = fs.readFileSync(path.join(root, 'popup.html'), 'utf8');
-	const descriptionRule = css.match(/\.feature-copy p\s*\{([\s\S]*?)\}/)?.[1] || '';
+	const script = fs.readFileSync(path.join(root, 'popup.js'), 'utf8');
+	const descriptionRule = css.match(/\.feature-tooltip\s*\{([\s\S]*?)\}/)?.[1] || '';
 	const mainRule = css.match(/main\s*\{([\s\S]*?)\}/)?.[1] || '';
 
 	assert.match(descriptionRule, /white-space:\s*normal/);
+	assert.match(descriptionRule, /position:\s*fixed/);
+	assert.match(descriptionRule, /max-width:\s*min\(/);
 	assert.doesNotMatch(descriptionRule, /text-overflow:\s*ellipsis/);
 	assert.doesNotMatch(descriptionRule, /overflow:\s*hidden/);
-	assert.match(mainRule, /overflow:\s*hidden/);
-	assert.doesNotMatch(mainRule, /overflow-y:\s*(?:auto|scroll)/);
+	assert.match(mainRule, /overflow-y:\s*auto/);
+	assert.match(script, /description\.hidden = true/);
+	assert.match(script, /setAttribute\('aria-describedby', description\.id\)/);
+	assert.match(script, /setAttribute\('role', 'tooltip'\)/);
+	assert.doesNotMatch(script, /copy\.append\(title, description\)/);
 	assert.match(css, /\.feature-subgroups\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,/);
 	assert.match(css, /\.feature-subgroup-column\s*\{[\s\S]*?flex-direction:\s*column/);
 	assert.match(css, /\.feature-subgroup h3\s*\{/);

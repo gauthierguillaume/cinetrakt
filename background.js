@@ -391,6 +391,23 @@ async function resolveTraktImdbId(pathname) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type === MESSAGE_TYPES.CLEAR_STREMIO_STREAM_HOVER) {
+		const senderUrl = sender?.tab?.url || sender?.url || '';
+		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || !Number.isFinite(message.at)) return false;
+		getSavedWindowId((windowId) => {
+			if (!windowId) return;
+			chrome.windows.get(windowId, { populate: true }, (popup) => {
+				if (readLastError()) return;
+				for (const tab of popup?.tabs || []) {
+					if (!tab.id || !isStremioWebUrl(tab.url)) continue;
+					if (new URL(tab.url).searchParams.get('wos_stream_panel') !== '1') continue;
+					chrome.tabs.sendMessage(tab.id, { type: message.type, at: message.at }, () => { readLastError(); });
+				}
+			});
+		});
+		return false;
+	}
+
 	if (message?.type === MESSAGE_TYPES.RESOLVE_TRAKT_IMDB_ID) {
 		const senderUrl = sender?.tab?.url || sender?.url || '';
 		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN)) {

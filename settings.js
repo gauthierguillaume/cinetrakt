@@ -17,9 +17,7 @@
 		imdbTraktButton: true,
 		imdbRatingColors: true,
 		stremioCompactPanel: true,
-		stremioHidePlayIcon: true,
-		stremioStreamCards: true,
-		stremioTraktTheme: true,
+		stremioStreamAppearance: true,
 		newTabMovieDiscovery: false,
 	});
 
@@ -37,9 +35,7 @@
 		{ key: 'imdbTraktButton', group: 'IMDb', title: 'Bouton Trakt', description: 'Ajoute le logo Trakt et ouvre la fiche correspondante depuis IMDb.' },
 		{ key: 'imdbRatingColors', group: 'IMDb', title: 'Couleurs des notes', description: 'Colorise les notes, les heatmaps et les moyennes affichées sur IMDb.' },
 		{ key: 'stremioCompactPanel', group: 'Stremio Web', title: 'Panneau compact', description: 'Isole la liste des sources et conserve son défilement indépendant.' },
-		{ key: 'stremioHidePlayIcon', group: 'Stremio Web', title: 'Sources sans bouton Play', description: 'Dans le panneau compact, masque le gros bouton de lecture et utilise sa place pour afficher les informations des sources avec retour à la ligne.' },
-		{ key: 'stremioStreamCards', group: 'Stremio Web', title: 'Sources en cartes', description: 'Réduit les marges du panneau compact et distingue chaque source avec une carte et un séparateur entre les caractéristiques et le titre. Affiche les informations avec retour à la ligne.' },
-		{ key: 'stremioTraktTheme', group: 'Stremio Web', title: 'Thème Trakt et détails colorés', description: 'Habille le panneau compact aux couleurs sombres de Trakt, colore les titres en violet et les tailles des fichiers en jaune doux, avec des lignes légèrement plus aérées.' },
+		{ key: 'stremioStreamAppearance', group: 'Stremio Web', title: 'Apparence des streams', description: 'Dans le panneau compact, améliore les streams avec des cartes, des marges réduites, les couleurs de Trakt et les logos vidéo et audio. Retire le gros bouton Play pour laisser plus de place aux informations.' },
 		{ key: 'newTabMovieDiscovery', group: 'Nouvel onglet', title: 'Film ou série aléatoire', description: 'Affiche une sélection visuelle aléatoire à partir des images TMDB.' },
 	]);
 
@@ -53,6 +49,12 @@
 		const normalized = { ...DEFAULTS };
 		for (const key of Object.keys(DEFAULTS)) {
 			if (typeof nextValues?.[key] === 'boolean') normalized[key] = nextValues[key];
+		}
+		// Fold the former visual switches into one option. Preserve an entirely
+		// disabled appearance; otherwise retain the improved presentation.
+		if (typeof nextValues?.stremioStreamAppearance !== 'boolean') {
+			const legacyKeys = ['stremioHidePlayIcon', 'stremioStreamCards', 'stremioTraktTheme', 'stremioStreamBadges'];
+			if (legacyKeys.every((key) => nextValues?.[key] === false)) normalized.stremioStreamAppearance = false;
 		}
 		return normalized;
 	}
