@@ -391,6 +391,22 @@ async function resolveTraktImdbId(pathname) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type === MESSAGE_TYPES.HANDOFF_TRAKT_SOUNDTRACK) {
+		const senderUrl = sender?.tab?.url || sender?.url || '';
+		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || sender.frameId !== 0
+			|| !sender.tab?.active || !/^\/(movies|shows)\/[^/]+\/?$/.test(new URL(senderUrl).pathname)) return false;
+		chrome.tabs.query({ url: `${TRAKT_APP_ORIGIN}/*` }, (tabs) => {
+			if (readLastError()) return;
+			for (const tab of tabs || []) {
+				if (!tab.id || tab.id === sender.tab.id || !hasExactOrigin(tab.url, TRAKT_APP_ORIGIN)) continue;
+				if (!/^\/(movies|shows)\/[^/]+\/?$/.test(new URL(tab.url).pathname)) continue;
+				chrome.tabs.sendMessage(tab.id, { type: MESSAGE_TYPES.HANDOFF_TRAKT_SOUNDTRACK },
+					{ frameId: 0 }, () => { readLastError(); });
+			}
+		});
+		return false;
+	}
+
 	if (message?.type === MESSAGE_TYPES.CLEAR_STREMIO_STREAM_HOVER) {
 		const senderUrl = sender?.tab?.url || sender?.url || '';
 		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || !Number.isFinite(message.at)) return false;

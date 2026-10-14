@@ -9,6 +9,7 @@ test('Spotify bridge protocol keeps one stable set of message types and origins'
 		METADATA: 'cinetrakt:spotify-embed-metadata',
 		PLAYBACK_STATE: 'cinetrakt:spotify-embed-playback-state',
 		PLAY_REQUEST: 'cinetrakt:spotify-embed-play',
+		PAUSE_REQUEST: 'cinetrakt:spotify-embed-pause',
 	});
 	assert.equal(protocol.SPOTIFY_ORIGIN, 'https://open.spotify.com');
 	assert.equal(protocol.TRAKT_ORIGIN, 'https://app.trakt.tv');

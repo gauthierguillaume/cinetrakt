@@ -144,13 +144,28 @@ function primeCinetraktPopularListsRendering(routeKey) {
 
 	const placeholder = document.createComment('CineTrakt popular lists render position');
 	const probe = document.createElement('div');
+	probe.id = 'cinetrakt-collection-render-probe';
+	const probeStyle = document.createElement('style');
+	probeStyle.textContent = `
+		#cinetrakt-collection-render-probe .trakt-list-item-container {
+			display: grid !important;
+			grid-template-columns: minmax(0, 1fr) !important;
+			overflow: visible !important;
+		}
+		#cinetrakt-collection-render-probe .trakt-list-item-container > svelte-css-wrapper > .trakt-card {
+			grid-area: 1 / 1 !important;
+		}
+	`;
+	// Each list card is also lazy-rendered. Overlap them only inside this invisible
+	// probe so later cards become observable without scrolling the native carousel.
+	probe.appendChild(probeStyle);
 	const originalStyle = renderFor.getAttribute('style');
 	Object.assign(probe.style, {
 		position: 'fixed',
-		left: '240px',
-		top: '160px',
-		width: '480px',
-		height: '320px',
+		left: '0',
+		top: '0',
+		width: 'min(480px, 100vw)',
+		height: 'min(400px, 100vh)',
 		overflow: 'hidden',
 		opacity: '0',
 		pointerEvents: 'none',
@@ -158,15 +173,15 @@ function primeCinetraktPopularListsRendering(routeKey) {
 	});
 	Object.assign(renderFor.style, {
 		display: 'block',
-		width: '480px',
-		height: '320px',
-		minHeight: '320px',
+		width: '100%',
+		height: '100%',
+		minHeight: '0',
 	});
 
 	renderFor.parentNode.insertBefore(placeholder, renderFor);
 	document.body.appendChild(probe);
 	probe.appendChild(renderFor);
-	const timer = window.setTimeout(() => restoreCinetraktCollectionRenderProbe(), 5000);
+	const timer = window.setTimeout(() => restoreCinetraktCollectionRenderProbe(), 15000);
 	cinetraktCollectionRenderProbe = { routeKey, renderFor, placeholder, probe, timer, originalStyle };
 }
 

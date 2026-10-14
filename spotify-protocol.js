@@ -6,6 +6,7 @@
 		METADATA: 'cinetrakt:spotify-embed-metadata',
 		PLAYBACK_STATE: 'cinetrakt:spotify-embed-playback-state',
 		PLAY_REQUEST: 'cinetrakt:spotify-embed-play',
+		PAUSE_REQUEST: 'cinetrakt:spotify-embed-pause',
 	});
 
 	const api = Object.freeze({

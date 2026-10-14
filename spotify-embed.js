@@ -9,6 +9,7 @@
 	let lastPayloadKey = '';
 	let lastPlaybackState = '';
 	let publishTimer = null;
+	let backgroundPlaybackAllowed = document.visibilityState === 'visible';
 
 	function findSpotifyPlaybackControl() {
 		return document.querySelector('button[data-testid="play-pause-button"]')
@@ -29,6 +30,10 @@
 
 	function publishSpotifyPlaybackState() {
 		const playbackState = getSpotifyPlaybackState();
+		if (document.visibilityState !== 'visible' && !backgroundPlaybackAllowed && playbackState === 'playing') {
+			pauseSpotifyPlayback();
+			return;
+		}
 		if (playbackState === 'unknown' || playbackState === lastPlaybackState) return;
 		lastPlaybackState = playbackState;
 		window.top.postMessage({
@@ -87,10 +92,22 @@
 		publishTimer = window.setTimeout(publishSpotifyMetadata, delay);
 	}
 
+	function pauseSpotifyPlayback() {
+		if (getSpotifyPlaybackState() === 'playing') findSpotifyPlaybackControl()?.click();
+	}
+
 	function handleSpotifyPlayRequest(event) {
 		if (event.origin !== TRAKT_ORIGIN
 			|| event.source !== window.top
-			|| event.data?.type !== MESSAGE_TYPES.PLAY_REQUEST) return;
+			|| ![MESSAGE_TYPES.PLAY_REQUEST, MESSAGE_TYPES.PAUSE_REQUEST].includes(event.data?.type)) return;
+		if (event.data.type === MESSAGE_TYPES.PAUSE_REQUEST) {
+			backgroundPlaybackAllowed = false;
+			pauseSpotifyPlayback();
+			scheduleSpotifyMetadataPublish(0);
+			return;
+		}
+		if (document.visibilityState !== 'visible') return;
+		backgroundPlaybackAllowed = true;
 
 		const control = findSpotifyPlaybackControl();
 		if (!control || getSpotifyPlaybackState() !== 'paused') {
@@ -122,6 +139,11 @@
 		document.addEventListener('DOMContentLoaded', () => scheduleSpotifyMetadataPublish(0));
 		window.addEventListener('load', () => scheduleSpotifyMetadataPublish(0));
 		window.addEventListener('message', handleSpotifyPlayRequest);
+		document.addEventListener('visibilitychange', () => {
+			backgroundPlaybackAllowed = document.visibilityState === 'visible' || getSpotifyPlaybackState() === 'playing';
+			scheduleSpotifyMetadataPublish(0);
+		});
+		if (document.visibilityState !== 'visible') pauseSpotifyPlayback();
 		scheduleSpotifyMetadataPublish(250);
 	});
 })();

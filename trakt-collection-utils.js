@@ -8,7 +8,8 @@
 		if (url.origin !== 'https://app.trakt.tv' && url.origin !== 'https://trakt.tv') return false;
 		// Official editorial lists share the same card variant and owner. Require the
 		// collection identity in both its canonical list path and its displayed title.
-		return /^\/lists\/official\/[a-z0-9]+(?:-[a-z0-9]+)*-collection\/?$/i.test(url.pathname)
+		// Trakt may append the numeric list ID to an otherwise identical collection slug.
+		return /^\/lists\/official\/[a-z0-9]+(?:-[a-z0-9]+)*-collection(?:-\d+)?\/?$/i.test(url.pathname)
 			&& /\bCollection\s*$/i.test(String(title || '').trim());
 	}
 

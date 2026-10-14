@@ -1,6 +1,7 @@
 (() => {
 	'use strict';
 	const { MESSAGE_TYPES, SPOTIFY_ORIGIN } = globalThis.CineTraktSpotifyProtocol;
+	const HANDOFF_MESSAGE = globalThis.CineTraktExtensionProtocol.MESSAGE_TYPES.HANDOFF_TRAKT_SOUNDTRACK;
 
 	function isCinetraktFeatureEnabled(key) {
 		return globalThis.CineTraktSettings?.isEnabled(key) !== false;
@@ -35,7 +36,83 @@ const cinetraktSoundtrackState = {
 	syncTimer: null,
 	autoplayTimer: null,
 	settleTimer: null,
+	backgroundSuspended: false,
+	resumeOnVisible: false,
+	backgroundPlaybackAllowed: false,
+	playbackAnnounced: false,
 };
+
+function announceCinetraktSoundtrackPlayback() {
+	if (!isCinetraktSoundtrackTabVisible() || cinetraktSoundtrackState.playbackAnnounced) return;
+	cinetraktSoundtrackState.playbackAnnounced = true;
+	try {
+		chrome.runtime.sendMessage({ type: HANDOFF_MESSAGE }, () => { void chrome.runtime.lastError; });
+	} catch { /* The extension may have been reloaded while this page stayed open. */ }
+}
+
+function handleCinetraktSoundtrackHandoff(message) {
+	if (message?.type !== HANDOFF_MESSAGE || !isCinetraktFeatureEnabled('traktSoundtrack')
+		|| !cinetraktSoundtrackState.routeKey) return;
+	const playing = collectCinetraktControllableSoundtrackTracks()
+		.some((track) => isCinetraktSoundtrackControlPlaying(track.control));
+	cinetraktSoundtrackState.resumeOnVisible ||= playing || cinetraktSoundtrackState.playbackState === 'playing';
+	cinetraktSoundtrackState.backgroundSuspended = true;
+	cinetraktSoundtrackState.backgroundPlaybackAllowed = false;
+	clearCinetraktSoundtrackTimer('autoplayTimer');
+	clearCinetraktSoundtrackTimer('settleTimer');
+	pauseCinetraktSoundtrackPlayback();
+}
+
+function isCinetraktSoundtrackTabVisible() {
+	return document.visibilityState === 'visible';
+}
+
+function pauseCinetraktSoundtrackPlayback() {
+	const playing = collectCinetraktControllableSoundtrackTracks()
+		.find((track) => isCinetraktSoundtrackControlPlaying(track.control));
+	playing?.control.click();
+	for (const iframe of document.querySelectorAll('section.trakt-soundtrack-section iframe[src*="open.spotify.com/embed/"]')) {
+		iframe.contentWindow?.postMessage({ type: MESSAGE_TYPES.PAUSE_REQUEST }, SPOTIFY_ORIGIN);
+	}
+	updateCinetraktSoundtrackPlaybackState('paused');
+}
+
+function suspendCinetraktSoundtrackForBackground() {
+	if (!cinetraktSoundtrackState.routeKey) return;
+	if (!cinetraktSoundtrackState.backgroundSuspended) {
+		cinetraktSoundtrackState.backgroundPlaybackAllowed = collectCinetraktControllableSoundtrackTracks()
+			.some((track) => isCinetraktSoundtrackControlPlaying(track.control));
+		cinetraktSoundtrackState.resumeOnVisible = cinetraktSoundtrackState.backgroundPlaybackAllowed
+			|| (!cinetraktSoundtrackState.autoplaySettled && isCinetraktFeatureEnabled('traktSoundtrackAutoplay'));
+		cinetraktSoundtrackState.backgroundSuspended = true;
+	}
+	clearCinetraktSoundtrackTimer('autoplayTimer');
+	clearCinetraktSoundtrackTimer('settleTimer');
+	// Keep an already playing soundtrack until another visible media tab takes over.
+	if (!cinetraktSoundtrackState.backgroundPlaybackAllowed) pauseCinetraktSoundtrackPlayback();
+}
+
+function handleCinetraktSoundtrackVisibilityChange() {
+	if (!isCinetraktFeatureEnabled('traktSoundtrack')) return;
+	if (!isCinetraktSoundtrackTabVisible()) {
+		suspendCinetraktSoundtrackForBackground();
+		return;
+	}
+	if (cinetraktSoundtrackState.backgroundSuspended) {
+		const resume = cinetraktSoundtrackState.resumeOnVisible && isCinetraktFeatureEnabled('traktSoundtrackAutoplay');
+		cinetraktSoundtrackState.backgroundSuspended = false;
+		cinetraktSoundtrackState.resumeOnVisible = false;
+		cinetraktSoundtrackState.backgroundPlaybackAllowed = false;
+		if (resume) {
+			cinetraktSoundtrackState.autoplayAttempted = false;
+			cinetraktSoundtrackState.autoplaySettled = false;
+			cinetraktSoundtrackState.autoplayAttemptCount = 0;
+			cinetraktSoundtrackState.autoplayClickedControl = null;
+			cinetraktSoundtrackState.discoveryDeadline = Date.now() + CINETRAKT_SOUNDTRACK_DISCOVERY_TIMEOUT;
+		}
+	}
+	initializeCinetraktSoundtrackFeatureForRoute();
+}
 
 function getCinetraktSoundtrackRouteKey() {
 	const match = window.location.pathname.match(/^\/(movies|shows)\/([^/]+)\/?$/);
@@ -263,6 +340,8 @@ function ensureCinetraktSoundtrackCardPlacement() {
 }
 
 function updateCinetraktSoundtrackPlaybackState(nextState) {
+	if (nextState === 'playing') announceCinetraktSoundtrackPlayback();
+	else cinetraktSoundtrackState.playbackAnnounced = false;
 	if (nextState === cinetraktSoundtrackState.playbackState) return;
 	cinetraktSoundtrackState.playbackState = nextState;
 	const playing = nextState === 'playing';
@@ -337,7 +416,7 @@ async function applyCinetraktSpotifyEmbedMetadata(track, metadata) {
 }
 
 function handleCinetraktSpotifyEmbedMessage(event) {
-	if (event.origin !== SPOTIFY_ORIGIN
+	if (!isCinetraktFeatureEnabled('traktSoundtrack') || event.origin !== SPOTIFY_ORIGIN
 		|| ![
 			MESSAGE_TYPES.READY,
 			MESSAGE_TYPES.METADATA,
@@ -361,6 +440,10 @@ function handleCinetraktSpotifyEmbedMessage(event) {
 	if (!track || !soundtrackScope?.contains(iframe)) return;
 
 	if (event.data.playbackState === 'playing') {
+		if (!isCinetraktSoundtrackTabVisible() && !cinetraktSoundtrackState.backgroundPlaybackAllowed) {
+			pauseCinetraktSoundtrackPlayback();
+			return;
+		}
 		completeCinetraktSoundtrackAutoplay('playing');
 	} else if (event.data.playbackState === 'paused') {
 		updateCinetraktSoundtrackPlaybackState('paused');
@@ -388,7 +471,9 @@ function scheduleCinetraktSoundtrackSync(delay = 60) {
 }
 
 function scheduleCinetraktSoundtrackAutoplayAttempt(delay = CINETRAKT_SOUNDTRACK_AUTOPLAY_RETRY_DELAY) {
-	if (cinetraktSoundtrackState.autoplaySettled || cinetraktSoundtrackState.autoplayTimer != null) return;
+	if (!isCinetraktSoundtrackTabVisible() || !isCinetraktFeatureEnabled('traktSoundtrack')
+		|| !isCinetraktFeatureEnabled('traktSoundtrackAutoplay')
+		|| cinetraktSoundtrackState.autoplaySettled || cinetraktSoundtrackState.autoplayTimer != null) return;
 	cinetraktSoundtrackState.autoplayTimer = window.setTimeout(() => {
 		cinetraktSoundtrackState.autoplayTimer = null;
 		if (cinetraktSoundtrackState.routeKey === getCinetraktSoundtrackRouteKey()) {
@@ -403,6 +488,7 @@ function getCinetraktSpotifyEmbed(track) {
 }
 
 function requestCinetraktSpotifyEmbedPlayback(track) {
+	if (!isCinetraktSoundtrackTabVisible()) return false;
 	const iframe = getCinetraktSpotifyEmbed(track);
 	if (!iframe?.contentWindow) return false;
 
@@ -446,6 +532,10 @@ function resolveCinetraktSoundtrackControl() {
 }
 
 function syncCinetraktSoundtrackState() {
+	if (!isCinetraktSoundtrackTabVisible()) {
+		suspendCinetraktSoundtrackForBackground();
+		return;
+	}
 	if (!cinetraktSoundtrackState.routeKey
 		|| cinetraktSoundtrackState.routeKey !== getCinetraktSoundtrackRouteKey()) return;
 
@@ -483,6 +573,8 @@ function completeCinetraktSoundtrackAutoplay(playbackState = '') {
 }
 
 function attemptCinetraktSoundtrackAutoplay() {
+	if (!isCinetraktSoundtrackTabVisible() || !isCinetraktFeatureEnabled('traktSoundtrack')
+		|| !isCinetraktFeatureEnabled('traktSoundtrackAutoplay')) return;
 	if (cinetraktSoundtrackState.autoplaySettled) return;
 	cinetraktSoundtrackState.autoplayAttempted = true;
 
@@ -543,7 +635,7 @@ function attemptCinetraktSoundtrackAutoplay() {
 }
 
 function toggleCinetraktSoundtrackPlayback() {
-	if (!cinetraktSoundtrackState.autoplaySettled) return;
+	if (!isCinetraktSoundtrackTabVisible() || !cinetraktSoundtrackState.autoplaySettled) return;
 	const track = resolveCinetraktSoundtrackControl();
 	if (!track?.control?.isConnected) return;
 	track.control.click();
@@ -555,11 +647,7 @@ function cleanupCinetraktSoundtrackFeature({ pause = true, resetRoute = true } =
 	clearCinetraktSoundtrackTimer('autoplayTimer');
 	clearCinetraktSoundtrackTimer('settleTimer');
 
-	if (pause) {
-		const playingTrack = collectCinetraktControllableSoundtrackTracks()
-			.find((track) => isCinetraktSoundtrackControlPlaying(track.control));
-		playingTrack?.control.click();
-	}
+	if (pause) pauseCinetraktSoundtrackPlayback();
 
 	cinetraktSoundtrackState.soundtrackObserver?.disconnect();
 	if (cinetraktSoundtrackState.coverButton) {
@@ -589,11 +677,19 @@ function cleanupCinetraktSoundtrackFeature({ pause = true, resetRoute = true } =
 		displayedTrackKey: '',
 		displayedCoverUrl: '',
 		soundtrackObserver: null,
+		backgroundSuspended: false,
+		resumeOnVisible: false,
+		backgroundPlaybackAllowed: false,
+		playbackAnnounced: false,
 	});
 	if (resetRoute) cinetraktSoundtrackState.routeKey = '';
 }
 
 function initializeCinetraktSoundtrackFeatureForRoute() {
+	if (!isCinetraktSoundtrackTabVisible()) {
+		suspendCinetraktSoundtrackForBackground();
+		return;
+	}
 	const routeKey = getCinetraktSoundtrackRouteKey();
 	if (routeKey !== cinetraktSoundtrackState.routeKey) {
 		cleanupCinetraktSoundtrackFeature();
@@ -644,6 +740,9 @@ function initializeCinetraktSoundtrackFeatureForRoute() {
 
 	syncCinetraktSoundtrackState();
 }
+	document.addEventListener('visibilitychange', handleCinetraktSoundtrackVisibilityChange);
+	window.addEventListener('pageshow', handleCinetraktSoundtrackVisibilityChange);
+	chrome.runtime.onMessage.addListener(handleCinetraktSoundtrackHandoff);
 	const api = Object.freeze({
 		update: initializeCinetraktSoundtrackFeatureForRoute,
 		cleanup: cleanupCinetraktSoundtrackFeature,
