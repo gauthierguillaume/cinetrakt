@@ -58,6 +58,7 @@ function soundtrackTab(visibility = 'visible', relay = soundtrackRelay(), { auto
 	const clock = timers(); const sent = []; const settings = { autoplay: true, enabled: true };
 	let hasTracks = true; let receiveHandoff;
 	let playing = false; let clicks = 0; let iframeReloads = 0;
+	let frameOrigin = protocol.SPOTIFY_ORIGIN; const sentOrigins = [];
 	let api; let receiveCatalog;
 	const report = (state, userInitiated = false) => api?.handleEmbedMessage({ origin: protocol.SPOTIFY_ORIGIN,
 		source: iframe.contentWindow, data: { type: protocol.MESSAGE_TYPES.PLAYBACK_STATE, playbackState: state, userInitiated, embedUrl: iframe.src } });
@@ -69,7 +70,13 @@ function soundtrackTab(visibility = 'visible', relay = soundtrackRelay(), { auto
 		click() { clicks++; playing = !playing; if (autoConfirm) report(playing ? 'playing' : 'paused', !playing); },
 	};
 	const attributes = new Map([['loading', 'lazy'], ['allow', '']]);
-	const iframe = { isConnected: true, src: 'https://open.spotify.com/embed/track/current', contentWindow: { postMessage: (message) => {
+	const iframe = { isConnected: true, src: 'https://open.spotify.com/embed/track/current', contentWindow: {
+		get location() {
+			if (frameOrigin === protocol.SPOTIFY_ORIGIN) throw Object.assign(new Error('Cross-origin frame'), { name: 'SecurityError' });
+			return { origin: frameOrigin };
+		}, postMessage: (message, origin) => {
+		sentOrigins.push(origin);
+		if (frameOrigin !== origin) throw new Error('postMessage target origin mismatch');
 		sent.push(message.type);
 		if (message.type === protocol.MESSAGE_TYPES.PAUSE_REQUEST) { playing = false; if (autoConfirm) report('paused'); }
 		if (message.type === protocol.MESSAGE_TYPES.PLAY_REQUEST && autoConfirm) { playing = true; report('playing'); }
@@ -114,7 +121,8 @@ function soundtrackTab(visibility = 'visible', relay = soundtrackRelay(), { auto
 	});
 	vm.runInContext(fs.readFileSync(require.resolve('../trakt-soundtrack.js'), 'utf8'), context);
 	api = context.CineTraktTraktSoundtrack;
-	return { api, clock, control, sent, settings, iframe,
+	return { api, clock, control, sent, sentOrigins, settings, iframe,
+		setFrameOrigin(origin) { frameOrigin = origin; },
 		manualClick() { document.emit('click', { isTrusted: true, target: control, preventDefault() {}, stopImmediatePropagation() {} }); },
 		interact(isTrusted = true) { document.emit('click', { isTrusted, target: { closest: () => null } }); },
 		removeTracks() { hasTracks = false; }, handoff(claimSerial) { receiveHandoff({ type: HANDOFF, claimSerial }); },
@@ -127,6 +135,26 @@ function soundtrackTab(visibility = 'visible', relay = soundtrackRelay(), { auto
 		message(type, playbackState, extra = {}) { api.handleEmbedMessage({ origin: protocol.SPOTIFY_ORIGIN, source: iframe.contentWindow, data: { type, playbackState, embedUrl: iframe.src, ...extra } }); },
 	};
 }
+
+test('handoff never sends pause to an unready Spotify frame still inheriting the Trakt origin', () => {
+	const tab = soundtrackTab('visible', soundtrackRelay(), { autoConfirm: false });
+	tab.setFrameOrigin(protocol.TRAKT_ORIGIN); tab.start(); tab.handoff(1);
+	assert.equal(tab.sentOrigins.length, 0, 'the src URL alone does not identify the loaded document');
+	assert.equal(tab.playing(), false, 'the native pause fallback remains available before READY');
+});
+
+test('a stale READY cannot send commands after the frame returns to Trakt or becomes blank', () => {
+	for (const origin of [protocol.TRAKT_ORIGIN, 'null']) {
+		const tab = soundtrackTab(); tab.start();
+		assert.ok(tab.sentOrigins.every(value => value === protocol.SPOTIFY_ORIGIN));
+		const before = tab.sentOrigins.length;
+		tab.setFrameOrigin(origin); tab.handoff(1);
+		assert.equal(tab.sentOrigins.length, before, 'no command is posted to a replaced document');
+		tab.setFrameOrigin(protocol.SPOTIFY_ORIGIN); tab.show(); tab.message(protocol.MESSAGE_TYPES.READY);
+		tab.clock.advance(1500);
+		assert.equal(tab.playing(), true, 'a fresh Spotify READY restores playback normally');
+	}
+});
 
 test('opening a background media tab cannot interrupt the currently playing tab', () => {
 	const foreground = soundtrackTab(); foreground.start();

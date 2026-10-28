@@ -127,7 +127,10 @@ function playerFixture({ readCatalog, withSidebar = false } = {}) {
 	const doc = { events, visibilityState: 'visible', addEventListener(name, fn) { (events.get(name) || events.set(name, []).get(name)).push(fn); },
 		querySelectorAll: s => doc.body.querySelectorAll(s), querySelector: s => doc.body.querySelector(s),
 		getElementById: id => doc.head.children.find(n => n.id === id) || null,
-		createElement(tag) { const e = new Element(tag, doc); if (tag === 'iframe') e.contentWindow = { postMessage: m => messages.push(m) }; return e; } };
+		createElement(tag) { const e = new Element(tag, doc); if (tag === 'iframe') e.contentWindow = {
+			get location() { throw Object.assign(new Error('Cross-origin Spotify frame'), { name: 'SecurityError' }); },
+			postMessage: (m, origin) => { assert.equal(origin, protocol.SPOTIFY_ORIGIN); messages.push(m); },
+		}; return e; } };
 	doc.body = new Element('body', doc);
 	doc.head = new Element('head', doc);
 	if (withSidebar) {

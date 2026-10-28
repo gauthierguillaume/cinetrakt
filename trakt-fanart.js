@@ -1,5 +1,6 @@
 (() => {
 	'use strict';
+	const LEFT_FADE_WIDTH = 72;
 	let current = null;
 	function targetForRoute(route) {
 		const match = /^\/(movies|shows)\/([^/?#]+)\/?$/.exec(route);
@@ -63,13 +64,12 @@
 			body.cinetrakt-fanart-active { isolation: isolate; }
 			html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact) body > .cinetrakt-detail-fanart {
 				display: block; position: fixed; z-index: -1; top: 0; right: 0; bottom: 0; overflow: hidden; opacity: .5;
-				mask-image: linear-gradient(90deg, transparent, #000 72px), linear-gradient(180deg, transparent, #000 48px, #000 78%, transparent);
-				mask-composite: intersect;
+				mask-image: linear-gradient(90deg, transparent, #000 ${LEFT_FADE_WIDTH}px);
 			}
 			.cinetrakt-detail-fanart img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
 			.cinetrakt-detail-fanart::after {
 				content: ''; position: absolute; inset: 0;
-				background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.35) 45%, rgba(0,0,0,.25));
+				background: rgba(0,0,0,.35);
 			}
 		`;
 		document.head.appendChild(style);
@@ -84,14 +84,16 @@
 		document.body.classList.remove('cinetrakt-fanart-active');
 	}
 	function align(state) {
-		const left = Number.parseFloat(getComputedStyle(state.main).getPropertyValue('--watch-on-stremio-sticky-content-left'));
+		const left = state.main.querySelector('.cinetrakt-sticky-poster-stage')?.getBoundingClientRect().right;
 		if (!Number.isFinite(left) || left <= 0) return false;
-		state.layer.style.left = `${left}px`;
+		// Finish the fade at the poster edge, so the title and all content to
+		// its right sit over an evenly visible image, not the transition.
+		state.layer.style.left = `${Math.max(0, left - LEFT_FADE_WIDTH)}px`;
 		return true;
 	}
 	function mount(state) {
 		if (!state.loaded || state.mounted || !align(state)) return;
-		// A fixed body layer must wait for the content boundary, but its metadata
+		// A fixed body layer must wait for the poster's right edge, but its metadata
 		// and image can load in parallel with the poster's layout preparation.
 		document.body.appendChild(state.layer); state.mounted = true;
 		state.main.classList.add('cinetrakt-fanart-ready'); document.body.classList.add('cinetrakt-fanart-active');

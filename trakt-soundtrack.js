@@ -114,6 +114,29 @@ function isCinetraktSoundtrackTabVisible() {
 	return document.visibilityState === 'visible';
 }
 
+function sendCinetraktSpotifyCommand(iframe, message) {
+	const target = iframe?.contentWindow;
+	if (!iframe?.isConnected || !target || !cinetraktReadySpotifyEmbeds.has(iframe)) return false;
+	// The src attribute can already say Spotify while the new frame still
+	// contains about:blank (inheriting Trakt's origin), or is being replaced.
+	// A previous READY belongs to the old document in that case.
+	try {
+		if (target.location.origin !== SPOTIFY_ORIGIN) {
+			cinetraktReadySpotifyEmbeds.delete(iframe);
+			cinetraktSpotifyPlaybackReports.delete(iframe);
+			return false;
+		}
+	} catch (error) {
+		// Reading Spotify's location is normally forbidden across origins.
+		// Its origin-checked READY and the exact postMessage origin remain required.
+		if (error?.name !== 'SecurityError') return false;
+	}
+	try {
+		target.postMessage(message, SPOTIFY_ORIGIN);
+		return true;
+	} catch { return false; }
+}
+
 function pauseCinetraktSoundtrackPlayback() {
 	const playing = collectCinetraktControllableSoundtrackTracks()
 		.find((track) => isCinetraktSoundtrackControlPlaying(track.control));
@@ -121,7 +144,7 @@ function pauseCinetraktSoundtrackPlayback() {
 	// Use one pause path: toggling Trakt and Spotify together can toggle back to play.
 	if (!activeEmbed || !cinetraktReadySpotifyEmbeds.has(activeEmbed)) playing?.control.click();
 	for (const iframe of document.querySelectorAll('section.trakt-soundtrack-section iframe[src*="open.spotify.com/embed/"]')) {
-		iframe.contentWindow?.postMessage({ type: MESSAGE_TYPES.PAUSE_REQUEST }, SPOTIFY_ORIGIN);
+		sendCinetraktSpotifyCommand(iframe, { type: MESSAGE_TYPES.PAUSE_REQUEST });
 	}
 	updateCinetraktSoundtrackPlaybackState('paused');
 }
@@ -589,7 +612,7 @@ function handleCinetraktSpotifyEmbedMessage(event) {
 	if (event.data.type === MESSAGE_TYPES.READY) {
 		scheduleCinetraktSoundtrackSync(0);
 		if (cinetraktSoundtrackState.userPaused) {
-			iframe.contentWindow?.postMessage({ type: MESSAGE_TYPES.PAUSE_REQUEST, userInitiated: true }, SPOTIFY_ORIGIN);
+			sendCinetraktSpotifyCommand(iframe, { type: MESSAGE_TYPES.PAUSE_REQUEST, userInitiated: true });
 		} else if (cinetraktSoundtrackState.playRequested) {
 			requestCinetraktSpotifyEmbedPlayback(resolveCinetraktSoundtrackControl());
 		}
@@ -618,7 +641,7 @@ function handleCinetraktSpotifyEmbedMessage(event) {
 
 	if (event.data.playbackState === 'playing') {
 		if (cinetraktSoundtrackState.userPaused) {
-			iframe.contentWindow?.postMessage({ type: MESSAGE_TYPES.PAUSE_REQUEST, userInitiated: true }, SPOTIFY_ORIGIN);
+			sendCinetraktSpotifyCommand(iframe, { type: MESSAGE_TYPES.PAUSE_REQUEST, userInitiated: true });
 			return;
 		}
 		if (!cinetraktSoundtrackState.playbackClaimed) {
@@ -748,8 +771,8 @@ function requestCinetraktSpotifyEmbedPlayback(track, userInitiated = false) {
 
 	return withCinetraktSoundtrackClaim(() => {
 		if (getCinetraktSpotifyEmbed(track) !== iframe || !iframe.isConnected) return;
-		iframe.contentWindow.postMessage({ type: MESSAGE_TYPES.PLAY_REQUEST, userInitiated,
-			continueInBackground: continueInBackground || !isCinetraktSoundtrackTabVisible() }, SPOTIFY_ORIGIN);
+		sendCinetraktSpotifyCommand(iframe, { type: MESSAGE_TYPES.PLAY_REQUEST, userInitiated,
+			continueInBackground: continueInBackground || !isCinetraktSoundtrackTabVisible() });
 	});
 }
 
@@ -1117,7 +1140,7 @@ function initializeCinetraktSoundtrackFeatureForRoute() {
 		if (cinetraktSoundtrackState.userPaused) {
 			// Cancel a queued start in the embed as well as Trakt's native pause.
 			const iframe = getCinetraktSpotifyEmbed(createCinetraktSoundtrackTrack(row, 0));
-			iframe?.contentWindow?.postMessage({ type: MESSAGE_TYPES.PAUSE_REQUEST, userInitiated: true }, SPOTIFY_ORIGIN);
+			sendCinetraktSpotifyCommand(iframe, { type: MESSAGE_TYPES.PAUSE_REQUEST, userInitiated: true });
 		} else {
 			cinetraktSoundtrackState.selectedTrackKey = getCinetraktSoundtrackTrackKey(row);
 			cinetraktSoundtrackState.selectedControl = button;

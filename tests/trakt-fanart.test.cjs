@@ -32,14 +32,14 @@ test('missing, expired or unsuccessful native metadata keeps the original backgr
 
 function fixture() {
 	const pending = [], nodes = [], timers = new Map(); let nextTimer = 0;
-	let contentLeft = '754px';
+	let posterRight = 738;
 	const main = { isConnected: true, children: [], classes: new Set(), appendChild(e) { this.children.push(e); },
+		querySelector: () => ({ getBoundingClientRect: () => ({ right: posterRight }) }),
 		classList: { add: c => main.classes.add(c), remove: c => main.classes.delete(c) } };
 	const body = { children: [], classes: new Set(), appendChild(e) { this.children.push(e); },
 		classList: { add: c => body.classes.add(c), remove: c => body.classes.delete(c) } };
 	const location = { pathname: '/shows/slow-horses' };
 	const context = vm.createContext({ URL, Date, Promise, readTestFanart: () => new Promise(resolve => pending.push(resolve)),
-		getComputedStyle: () => ({ getPropertyValue: () => contentLeft }),
 		window: { location, setTimeout(fn) { const id = ++nextTimer; timers.set(id, fn); return id; }, clearTimeout: id => timers.delete(id) },
 		document: { body, head: { appendChild() {} }, getElementById: () => true, querySelector: () => main,
 			createElement(tag) { const n = { tag, style: {}, listeners: {}, children: [], removed: false, setAttribute() {}, removeAttribute() {},
@@ -49,18 +49,18 @@ function fixture() {
 	const source = fs.readFileSync(require.resolve('../trakt-fanart.js'), 'utf8').replace('await readFanart(state.route)', 'await readTestFanart(state.route)');
 	vm.runInContext(source, context);
 	return { api: context.CineTraktTraktFanart, pending, nodes, timers, main, body, location,
-		setContentLeft(value) { contentLeft = value; } };
+		setPosterRight(value) { posterRight = value; } };
 }
 
 test('fanart loads before poster placement, but only appears once the correct content boundary exists', async () => {
-	const f = fixture(); f.setContentLeft('');
+	const f = fixture(); f.setPosterRight(Number.NaN);
 	f.api.update(true); assert.equal(f.pending.length, 1);
 	f.pending[0](url); await new Promise(setImmediate);
 	const image = f.nodes.find(n => n.tag === 'img'); image.listeners.load();
 	assert.equal(f.body.children.length, 0, 'the backdrop must not flash over the sidebar or poster');
-	f.setContentLeft('754px'); f.api.update(true); f.api.update(true);
+	f.setPosterRight(738); f.api.update(true); f.api.update(true);
 	assert.equal(f.body.children.length, 1); assert.equal(f.pending.length, 1);
-	assert.equal(f.body.children[0].style.left, '754px');
+	assert.equal(f.body.children[0].style.left, '666px', 'the 72px fade ends at the poster edge, before the text');
 	assert.equal(f.main.classes.has('cinetrakt-fanart-ready'), true);
 });
 
@@ -75,7 +75,7 @@ test('late image loads cannot put the previous film behind a new fiche, and disa
 	assert.equal(f.main.classes.has('cinetrakt-fanart-ready'), true);
 	assert.equal(f.main.children.length, 0, 'layout containment must not anchor the fixed image to the scrolling content');
 	assert.equal(f.body.children.length, 1);
-	assert.equal(f.body.children[0].style.left, '754px');
+	assert.equal(f.body.children[0].style.left, '666px');
 	f.api.update(false);
 	assert.equal(f.main.classes.has('cinetrakt-fanart-ready'), false);
 	assert.equal(f.body.classes.size, 0);
