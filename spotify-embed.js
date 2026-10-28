@@ -10,6 +10,52 @@
 	let lastPlaybackState = '';
 	let publishTimer = null;
 	let backgroundPlaybackAllowed = document.visibilityState === 'visible';
+	const playbackMonitor = globalThis.CineTraktSpotifyPlayback.createPlaybackMonitor();
+	let healthTimer = null;
+	let restartTimer = null;
+	let manualPause = false;
+	let userInitiatedPause = false;
+	let pendingPlay = false;
+	let playRetryTimer = null;
+	let playAttemptCount = 0;
+	const MAX_START_ATTEMPTS = 4;
+
+	function cancelSpotifyStartRetries() {
+		pendingPlay = false;
+		window.clearTimeout(playRetryTimer); playRetryTimer = null;
+	}
+
+	function startPendingSpotifyPlayback() {
+		if (!pendingPlay || manualPause || (document.visibilityState !== 'visible' && !backgroundPlaybackAllowed) || playRetryTimer !== null) return;
+		const control = findSpotifyPlaybackControl();
+		const state = getSpotifyPlaybackState();
+		if (!control || state === 'unknown') return;
+		if (state === 'playing' || playAttemptCount >= MAX_START_ATTEMPTS) {
+			cancelSpotifyStartRetries(); return;
+		}
+		playAttemptCount++;
+		control.click();
+		// The controls can mount before Spotify accepts play commands. Keep the
+		// request alive briefly, without letting duplicate parent messages rush it.
+		playRetryTimer = window.setTimeout(() => {
+			playRetryTimer = null;
+			startPendingSpotifyPlayback();
+			scheduleSpotifyMetadataPublish(0);
+		}, 1000 * (2 ** (playAttemptCount - 1)));
+	}
+
+	function getObservedSpotifyPlaybackState() {
+		const progress = document.querySelector('input[type="range"][max]');
+		const state = playbackMonitor.sample({ state: getSpotifyPlaybackState(),
+			position: progress ? Number(progress.value) : null,
+			duration: progress ? Number(progress.max) : null, now: Date.now() });
+		// Chromium can suspend Spotify's visual progress updates in a hidden
+		// frame while audio keeps playing. A frozen slider there is not a stall.
+		if (state === 'stalled' && document.visibilityState !== 'visible' && backgroundPlaybackAllowed) {
+			return lastPlaybackState === 'playing' ? 'playing' : 'buffering';
+		}
+		return state;
+	}
 
 	function findSpotifyPlaybackControl() {
 		return document.querySelector('button[data-testid="play-pause-button"]')
@@ -29,18 +75,24 @@
 	}
 
 	function publishSpotifyPlaybackState() {
-		const playbackState = getSpotifyPlaybackState();
-		if (document.visibilityState !== 'visible' && !backgroundPlaybackAllowed && playbackState === 'playing') {
+		window.clearTimeout(healthTimer); healthTimer = null;
+		if (manualPause && getSpotifyPlaybackState() === 'playing') { pauseSpotifyPlayback(); return; }
+		if (document.visibilityState !== 'visible' && !backgroundPlaybackAllowed && getSpotifyPlaybackState() === 'playing') {
 			pauseSpotifyPlayback();
 			return;
 		}
+		const playbackState = getObservedSpotifyPlaybackState();
+		if (playbackState === 'playing' && !userInitiatedPause) manualPause = false;
+		if (getSpotifyPlaybackState() === 'playing') healthTimer = window.setTimeout(publishSpotifyPlaybackState, 1000);
 		if (playbackState === 'unknown' || playbackState === lastPlaybackState) return;
 		lastPlaybackState = playbackState;
 		window.top.postMessage({
 			type: MESSAGE_TYPES.PLAYBACK_STATE,
 			embedUrl: window.location.href,
 			playbackState,
+			userInitiated: userInitiatedPause && playbackState === 'paused',
 		}, TRAKT_ORIGIN);
+		userInitiatedPause = false;
 	}
 
 	function getLargestSpotifyCover() {
@@ -66,6 +118,7 @@
 
 	function publishSpotifyMetadata() {
 		publishTimer = null;
+		startPendingSpotifyPlayback();
 		publishSpotifyPlaybackState();
 		const cover = getLargestSpotifyCover();
 		const coverUrl = cover?.currentSrc || cover?.src || '';
@@ -79,7 +132,7 @@
 			coverUrl,
 			title,
 			artist,
-			playbackState: getSpotifyPlaybackState(),
+			playbackState: getObservedSpotifyPlaybackState(),
 		};
 		const payloadKey = `${coverUrl}|${title}|${artist}`;
 		if (payloadKey === lastPayloadKey) return;
@@ -93,6 +146,10 @@
 	}
 
 	function pauseSpotifyPlayback() {
+		playbackMonitor.reset();
+		cancelSpotifyStartRetries();
+		playAttemptCount = 0;
+		window.clearTimeout(restartTimer); restartTimer = null;
 		if (getSpotifyPlaybackState() === 'playing') findSpotifyPlaybackControl()?.click();
 	}
 
@@ -101,21 +158,36 @@
 			|| event.source !== window.top
 			|| ![MESSAGE_TYPES.PLAY_REQUEST, MESSAGE_TYPES.PAUSE_REQUEST].includes(event.data?.type)) return;
 		if (event.data.type === MESSAGE_TYPES.PAUSE_REQUEST) {
+			if (event.data.userInitiated) manualPause = true;
 			backgroundPlaybackAllowed = false;
 			pauseSpotifyPlayback();
 			scheduleSpotifyMetadataPublish(0);
 			return;
 		}
-		if (document.visibilityState !== 'visible') return;
+		if (document.visibilityState !== 'visible' && event.data.continueInBackground !== true) return;
+		if (manualPause && !event.data.userInitiated) return;
+		if (event.data.userInitiated) {
+			manualPause = false;
+			cancelSpotifyStartRetries(); playAttemptCount = 0;
+		}
 		backgroundPlaybackAllowed = true;
+		if (lastPlaybackState === 'ended') playbackMonitor.reset();
+		pendingPlay = true;
 
 		const control = findSpotifyPlaybackControl();
-		if (!control || getSpotifyPlaybackState() !== 'paused') {
-			publishSpotifyPlaybackState();
+		if (control && getSpotifyPlaybackState() === 'playing' && getObservedSpotifyPlaybackState() === 'stalled' && restartTimer === null) {
+			cancelSpotifyStartRetries();
+			control.click();
+			restartTimer = window.setTimeout(() => {
+				restartTimer = null;
+				if (!manualPause && backgroundPlaybackAllowed && getSpotifyPlaybackState() === 'paused') {
+					findSpotifyPlaybackControl()?.click();
+				}
+				playbackMonitor.reset(); scheduleSpotifyMetadataPublish(0);
+			}, 150);
 			return;
 		}
-
-		control.click();
+		startPendingSpotifyPlayback();
 		scheduleSpotifyMetadataPublish(100);
 		window.setTimeout(() => scheduleSpotifyMetadataPublish(0), 500);
 	}
@@ -139,8 +211,26 @@
 		document.addEventListener('DOMContentLoaded', () => scheduleSpotifyMetadataPublish(0));
 		window.addEventListener('load', () => scheduleSpotifyMetadataPublish(0));
 		window.addEventListener('message', handleSpotifyPlayRequest);
+		document.addEventListener('click', (event) => {
+			if (!event.isTrusted || event.target?.closest?.('button') !== findSpotifyPlaybackControl()) return;
+			manualPause = getSpotifyPlaybackState() === 'playing';
+			if (manualPause) backgroundPlaybackAllowed = false;
+			if (manualPause || lastPlaybackState === 'ended') playbackMonitor.reset();
+			userInitiatedPause = manualPause;
+			cancelSpotifyStartRetries(); playAttemptCount = 0;
+			window.top.postMessage({ type: MESSAGE_TYPES.PLAYBACK_STATE, embedUrl: window.location.href,
+				playbackState: manualPause ? 'paused' : 'buffering', userInitiated: true }, TRAKT_ORIGIN);
+			if (manualPause) {
+				window.clearTimeout(restartTimer); restartTimer = null;
+			}
+		}, true);
+		window.addEventListener('pagehide', () => {
+			cancelSpotifyStartRetries(); window.clearTimeout(healthTimer); window.clearTimeout(restartTimer);
+		});
 		document.addEventListener('visibilitychange', () => {
-			backgroundPlaybackAllowed = document.visibilityState === 'visible' || getSpotifyPlaybackState() === 'playing';
+			backgroundPlaybackAllowed = backgroundPlaybackAllowed || document.visibilityState === 'visible' || getSpotifyPlaybackState() === 'playing';
+			// Give the visual timer a fresh grace period after returning to a tab.
+			if (document.visibilityState === 'visible') playbackMonitor.reset();
 			scheduleSpotifyMetadataPublish(0);
 		});
 		if (document.visibilityState !== 'visible') pauseSpotifyPlayback();

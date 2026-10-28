@@ -21,25 +21,60 @@ function card() {
 	const element = { classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name) } };
 	return { element, child: { closest: () => element }, highlighted: () => classes.has(HOVER) };
 }
-function setup() {
+function setup({ enabled = true } = {}) {
 	const document = Object.assign(surface(), { documentElement: Object.assign(surface(), card().element), querySelectorAll: () => [] });
 	const window = surface();
 	const incoming = new Set();
 	let now = 1000;
+	let settingsChanged;
+	let observing = 0;
+	let clearedBadges = 0;
 	vm.runInNewContext(fs.readFileSync(require.resolve('../stremio.js'), 'utf8'), {
 		document, window, URLSearchParams,
 		Date: { now: () => now },
 		CineTraktExtensionProtocol: { MESSAGE_TYPES },
 		chrome: { runtime: { onMessage: { addListener: (handler) => incoming.add(handler), removeListener: (handler) => incoming.delete(handler) } } },
 		location: { search: '?wos_stream_panel=1', hash: '#/detail/movie/tt0417741', pathname: '/', hostname: 'web.stremio.com' },
-		MutationObserver: class { observe() {} disconnect() {} },
+		MutationObserver: class { observe() { observing++; } disconnect() { observing--; } },
 		requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-		CineTraktSettings: { ready: { then: (start) => start() }, isEnabled: () => true, onChange() {} },
-		CineTraktStreamBadges: { clearAll() {} },
+		CineTraktSettings: { ready: { then: (start) => start() },
+			isEnabled: (key) => key === 'stremioCompactPanel' ? enabled : true,
+			onChange(handler) { settingsChanged = handler; return () => { settingsChanged = null; }; } },
+		CineTraktStreamBadges: { clearAll() { clearedBadges++; } },
 	});
 	window.clearTimeout = () => {};
-	return { document, window, setTime: (value) => { now = value; }, receive: (message) => incoming.forEach((handler) => handler(message)) };
+	return { document, window, setTime: (value) => { now = value; }, receive: (message) => incoming.forEach((handler) => handler(message)),
+		setEnabled(value) { enabled = value; settingsChanged?.(); },
+		get observing() { return observing; }, get clearedBadges() { return clearedBadges; },
+	};
 }
+
+test('compact panel can be enabled after loading, disabled and re-enabled without duplicate observers', () => {
+	const fixture = setup({ enabled: false }); const stream = card();
+	assert.equal(fixture.observing, 0);
+	fixture.document.emit('pointerover', { target: stream.child });
+	assert.equal(stream.highlighted(), false);
+	fixture.setEnabled(true);
+	assert.equal(fixture.observing, 1);
+	fixture.document.emit('pointerover', { target: stream.child });
+	assert.equal(stream.highlighted(), true);
+	fixture.setEnabled(true);
+	assert.equal(fixture.observing, 1);
+	fixture.setEnabled(false);
+	assert.equal(fixture.observing, 0);
+	assert.equal(fixture.clearedBadges, 1);
+	assert.equal(stream.highlighted(), false);
+	fixture.document.emit('pointerover', { target: stream.child });
+	assert.equal(stream.highlighted(), false);
+	fixture.setEnabled(true);
+	assert.equal(fixture.observing, 1);
+	fixture.document.emit('pointerover', { target: stream.child });
+	assert.equal(stream.highlighted(), true);
+	fixture.window.emit('pagehide');
+	assert.equal(fixture.observing, 0);
+	fixture.setEnabled(true);
+	assert.equal(fixture.observing, 0);
+});
 
 test('stream hover follows descendants, switches cards and clears in the gap', () => {
 	const { document } = setup();
@@ -105,9 +140,11 @@ test('background relays pointer returns only from Trakt to the saved compact Str
 	let handler;
 	vm.runInNewContext(fs.readFileSync(require.resolve('../background.js'), 'utf8'), {
 		importScripts() {}, URL,
+		CineTraktImdbEpisodeLoader: { start() {} },
 		CineTraktExtensionProtocol: { MESSAGE_TYPES },
 		CineTraktStremioUrls: require('../stremio-url.js'),
 		CineTraktWindowLayout: {}, CineTraktTraktImdbResolver: {},
+		CineTraktSeasonRatings: require('../season-rating-utils.js'),
 		chrome: {
 			runtime: { onMessage: { addListener: (listener) => { handler = listener; } } },
 			storage: { local: { get: (key, callback) => callback({ [key]: 42 }) } },

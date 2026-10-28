@@ -12,9 +12,12 @@
 		return Array.from(element.classList || []).some((className) => ownedMarker.test(className));
 	}
 
-	function isOwnedMutation(mutation, ownedMarker) {
+	function isOwnedMutation(mutation, ownedMarker, nativeContainerSelector = '') {
 		if (!mutation || !(ownedMarker instanceof RegExp)) return false;
-		if (hasOwnedMarker(mutation.target, ownedMarker)) return true;
+		// A native container remains native after a feature adds a styling class.
+		// Ignore its extension-owned children, but still process new site content.
+		if (hasOwnedMarker(mutation.target, ownedMarker)
+			&& !(nativeContainerSelector && mutation.target.matches?.(nativeContainerSelector))) return true;
 
 		const changedNodes = [...(mutation.addedNodes || []), ...(mutation.removedNodes || [])];
 		return changedNodes.length > 0 && changedNodes.every((node) => {
@@ -27,6 +30,8 @@
 		environment = globalThis,
 		mutationDelay = 200,
 		ownedMarker,
+		nativeContainerSelector = '',
+		maxMutationWait = 1000,
 		name = 'page',
 		observeBody = false,
 		subscribeToSettings = false,
@@ -36,6 +41,8 @@
 		let update = null;
 		let observer = null;
 		let timer = null;
+		let maxWaitTimer = null;
+		let immediatePending = false;
 		let running = false;
 		let rerunRequested = false;
 		let started = false;
@@ -50,7 +57,11 @@
 		}
 
 		async function flush() {
+			environment.clearTimeout(timer);
+			environment.clearTimeout(maxWaitTimer);
 			timer = null;
+			maxWaitTimer = null;
+			immediatePending = false;
 			if (!update) return;
 			if (running) {
 				rerunRequested = true;
@@ -81,19 +92,26 @@
 		}
 
 		function schedule(reason = 'dom-update', delay = mutationDelay) {
+			if (!started) return;
 			pendingReasons.add(reason);
 			if (running) {
 				rerunRequested = true;
 				return;
 			}
 
+			const wait = Math.max(0, delay);
+			if (immediatePending && wait > 0) return;
+			immediatePending = wait === 0;
 			environment.clearTimeout(timer);
-			timer = environment.setTimeout(flush, Math.max(0, delay));
+			timer = environment.setTimeout(flush, wait);
+			if (wait > 0 && maxWaitTimer === null) {
+				maxWaitTimer = environment.setTimeout(flush, Math.max(wait, maxMutationWait));
+			}
 		}
 
 		function handleMutations(mutations) {
 			const routeChanged = getRouteKey(environment.location) !== lastProcessedRouteKey;
-			if (routeChanged || mutations.some((mutation) => !isOwnedMutation(mutation, ownedMarker))) {
+			if (routeChanged || mutations.some((mutation) => !isOwnedMutation(mutation, ownedMarker, nativeContainerSelector))) {
 				schedule(routeChanged ? 'route-dom-update' : 'dom-update', routeChanged ? 0 : mutationDelay);
 			}
 		}
@@ -104,7 +122,10 @@
 			observer?.disconnect();
 			observer = null;
 			environment.clearTimeout(timer);
+			environment.clearTimeout(maxWaitTimer);
 			timer = null;
+			maxWaitTimer = null;
+			immediatePending = false;
 			cleanupCallbacks.splice(0).forEach((cleanup) => cleanup());
 			pendingReasons.clear();
 			update = null;

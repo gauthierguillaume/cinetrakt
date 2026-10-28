@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 require('../stremio-formatting.js');
-const { getFileSizeRanges, formatFileSizeText, getTitleRange, getBadgeIds, getSourceLineIndexes, getTechnicalBadgeIds, getVideoBadgeParts, getAudioChannelParts, getEditionBadgeParts,
+const { getFileSizeRanges, formatFileSizeText, getBadgeIds, getSourceLineIndexes, getTechnicalBadgeIds, getVideoBadgeParts, getAudioChannelParts, getEditionBadgeParts,
 	getProviderPrefix, getDescriptionGroups } = globalThis.CineTraktStreamFormatting;
 
 test('file sizes preserve offsets for addon typography and decimal units', () => {
@@ -17,13 +17,10 @@ test('file size presentation removes decorative glyphs without changing values o
 	assert.equal(formatFileSizeText('🇫🇷 𝙏𝙞𝙩𝙡𝙚 7.1'), '🇫🇷 𝙏𝙞𝙩𝙡𝙚 7.1');
 });
 
-test('stream titles use the whole logical line including Unicode and punctuation', () => {
+test('stream heading retains the full Unicode title and edition without rewriting them', () => {
 	const title = '𝙏𝙝𝙚 𝙇𝙤𝙧𝙙: The Fellowship of the Ring';
-	const text = `${title}\r\n(2001) Extended Edition\nAtmos 7.1`;
-	const { start, end } = getTitleRange(text);
-	assert.equal(text.slice(start, end), title);
-	assert.equal(getTitleRange('One line').end, 8);
-	assert.equal(getTitleRange('').end, 0);
+	assert.deepEqual(getDescriptionGroups(`${title}\r\n2001 Extended Edition\nAtmos 7.1`).header,
+		[title, '2001 Extended Edition']);
 });
 
 test('badges recognize only their exact resolution or source including addon typography', () => {

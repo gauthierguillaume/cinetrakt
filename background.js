@@ -1,10 +1,12 @@
 importScripts("settings.js", "extension-protocol.js", "stremio-url.js", "trakt-imdb-resolver.js", "window-layout.js");
+importScripts('season-rating-utils.js');
+importScripts('episode-rating-utils.js', 'imdb-episode-loader.js');
+globalThis.CineTraktImdbEpisodeLoader.start();
+const { getSeasonRatingsUrl, parseSeasonRatings, parseSeasonPosters, parseSeasonDetails } = globalThis.CineTraktSeasonRatings;
 
 const {
 	getFallbackDisplayBounds,
-	getImdbRatingsPopupLayout,
 	getPopupLayout,
-	getResizedImdbRatingsPopupLayout,
 	pickBestDisplayForWindow,
 } = globalThis.CineTraktWindowLayout;
 const { isStremioWebUrl } = globalThis.CineTraktStremioUrls;
@@ -12,12 +14,19 @@ const {
 	TRAKT_API_CLIENT_ID,
 	findImdbIdInTraktResponse,
 	getTraktApiMediaUrl,
+	getTraktApiRatingsUrl,
+	findExternalRatingsInTraktResponse,
 } = globalThis.CineTraktTraktImdbResolver;
 const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
 
 const STREMIO_WEB_WINDOW_KEY = "watchOnStremioWebWindowId";
-const IMDB_RATINGS_WINDOW_KEY = "cinetraktImdbRatingsWindowId";
+const STREMIO_SOURCE_STATE_KEY = "cinetraktStremioSourceState";
+const STREMIO_MIN_WIDTH_KEY = "cinetraktStremioMinimumWidth";
+const stremioPlacementJobs = new Map();
+const stremioClosedDuringPlacement = new Set();
 const TRAKT_APP_ORIGIN = "https://app.trakt.tv";
+const TRAKT_LOOKUP_TIMEOUT_MS = 12000;
+let soundtrackClaimSerial = Date.now() * 1000;
 
 function hasExactOrigin(value, expectedOrigin) {
 	try {
@@ -41,18 +50,62 @@ function forgetWindowId() {
 	chrome.storage.local.remove(STREMIO_WEB_WINDOW_KEY);
 }
 
-function getSavedImdbRatingsWindowId(callback) {
-	chrome.storage.local.get(IMDB_RATINGS_WINDOW_KEY, (result) => {
-		callback(result?.[IMDB_RATINGS_WINDOW_KEY]);
+function restoreStremioSourceState(record, focused = true) {
+	if (!record?.sourceWindowId) return;
+	chrome.windows.get(record.sourceWindowId, (win) => {
+		if (readLastError() || !win) return;
+		if (record.state === "fullscreen" || record.state === "maximized") {
+			// Fullscreen cannot be combined with focused:false or explicit bounds.
+			safeWindowUpdate(win.id, { state: record.state, ...(focused ? { focused: true } : {}) });
+		} else if (record.state === "normal" && record.bounds) {
+			normalizeWindowFast(win.id, record.bounds, (ok) => {
+				if (ok && focused) safeWindowUpdate(win.id, { focused: true });
+			});
+		}
 	});
 }
 
-function saveImdbRatingsWindowId(windowId) {
-	chrome.storage.local.set({ [IMDB_RATINGS_WINDOW_KEY]: windowId });
+function rememberStremioSourceState(panelWindowId, sourceWindow, callback) {
+	chrome.storage.session.get(STREMIO_SOURCE_STATE_KEY, (result) => {
+		const previous = result?.[STREMIO_SOURCE_STATE_KEY];
+		if (previous?.panelWindowId === panelWindowId && previous.sourceWindowId === sourceWindow.id) {
+			callback(); return;
+		}
+		// Keep the original state across episode clicks and replacement panels.
+		const original = previous?.sourceWindowId === sourceWindow.id ? previous : {
+			sourceWindowId: sourceWindow.id,
+			state: sourceWindow.state,
+			bounds: Object.fromEntries(["left", "top", "width", "height"].map(key => [key, sourceWindow[key]])),
+		};
+		if (previous && previous.sourceWindowId !== sourceWindow.id) restoreStremioSourceState(previous, false);
+		chrome.storage.session.set({ [STREMIO_SOURCE_STATE_KEY]: { ...original, panelWindowId } }, callback);
+	});
 }
 
-function forgetImdbRatingsWindowId() {
-	chrome.storage.local.remove(IMDB_RATINGS_WINDOW_KEY);
+function restoreStremioSourceAfterClose(closedWindowId) {
+	if (stremioPlacementJobs.has(closedWindowId)) {
+		stremioClosedDuringPlacement.add(closedWindowId); return;
+	}
+	chrome.storage.session.get(STREMIO_SOURCE_STATE_KEY, (result) => {
+		const record = result?.[STREMIO_SOURCE_STATE_KEY];
+		if (!record || (record.panelWindowId !== closedWindowId && record.sourceWindowId !== closedWindowId)) return;
+		chrome.storage.session.remove(STREMIO_SOURCE_STATE_KEY, () => {
+			if (record.panelWindowId === closedWindowId) restoreStremioSourceState(record);
+		});
+	});
+}
+
+function beginStremioPlacement(panelWindowId, sendResponse) {
+	stremioPlacementJobs.set(panelWindowId, (stremioPlacementJobs.get(panelWindowId) || 0) + 1);
+	return (response) => {
+		const remaining = stremioPlacementJobs.get(panelWindowId) - 1;
+		if (remaining > 0) stremioPlacementJobs.set(panelWindowId, remaining);
+		else {
+			stremioPlacementJobs.delete(panelWindowId);
+			if (stremioClosedDuringPlacement.delete(panelWindowId)) restoreStremioSourceAfterClose(panelWindowId);
+		}
+		sendResponse(response);
+	};
 }
 
 function getDisplayBoundsForSource(sender, screenBounds, callback) {
@@ -140,37 +193,68 @@ function normalizeWindowFast(windowId, bounds, callback) {
 		height: Math.round(bounds.height),
 		focused: false,
 	};
-
-	safeWindowUpdate(windowId, { state: "normal", focused: false }, (ok) => {
-		if (!ok) {
-			callback?.(false);
-			return;
-		}
-
-		setTimeout(() => {
-			safeWindowUpdate(windowId, { ...wanted, state: "normal" }, (boundsApplied, error, updatedWindow) => {
-				callback?.(boundsApplied, updatedWindow);
+	let attempts = 0;
+	const matches = (win) => win?.state === "normal"
+		&& ["left", "top", "width", "height"].every((key) => {
+			// Width 1 probes the browser's accepted minimum, not a literal 1px window.
+			if (key === "width" && wanted.width === 1) return win.width > 0;
+			return Number.isFinite(win[key]) && Math.abs(win[key] - wanted[key]) <= 2;
+		});
+	const retry = (win) => {
+		if (attempts >= 5) { callback?.(false, win); return; }
+		setTimeout(apply, attempts * 100);
+	};
+	const apply = () => {
+		attempts++;
+		chrome.windows.get(windowId, (win) => {
+			if (readLastError() || !win) { callback?.(false); return; }
+			if (win.state !== "normal") {
+				// Restoring a maximized/fullscreen window can finish after update's
+				// callback. Read its state again before sending separate bounds.
+				safeWindowUpdate(windowId, { state: "normal" }, () => retry(win));
+				return;
+			}
+			if (wanted.width !== 1 && matches(win)) { callback?.(true, win); return; }
+			safeWindowUpdate(windowId, wanted, (ok) => {
+				if (!ok) { retry(win); return; }
+				setTimeout(() => {
+					chrome.windows.get(windowId, (settledWindow) => {
+						if (readLastError() || !settledWindow) { callback?.(false); return; }
+						if (matches(settledWindow)) callback?.(true, settledWindow);
+						else retry(settledWindow);
+					});
+				}, 100);
 			});
-		}, 0);
-	});
+		});
+	};
+	apply();
 }
 
-function focusStremioWindow(windowId, sendResponse) {
-	safeWindowUpdate(windowId, { focused: true }, (ok) => {
-		sendResponse({ ok: !!ok, windowId });
+function focusStremioWindow(windowId, sendResponse, sourceWindowId, sourceBounds) {
+	// Creating/fitting the panel may overlap the source window's native restore.
+	// Recheck Trakt at the end too; an already-correct window needs no update.
+	normalizeWindowFast(sourceWindowId, sourceBounds, (sourcePlaced) => {
+		safeWindowUpdate(windowId, { focused: true }, (ok) => {
+			sendResponse({ ok: !!ok && !!sourcePlaced, windowId });
+		});
 	});
 }
 
 function createStremioPopup(url, layout, sender, sendResponse) {
+	chrome.storage.local.get(STREMIO_MIN_WIDTH_KEY, (stored) => {
+		const knownWidth = Number(stored?.[STREMIO_MIN_WIDTH_KEY]);
+		const initial = getPopupLayout(layout.displayBounds, Number.isFinite(knownWidth) && knownWidth > 0 ? knownWidth : 1);
 		chrome.windows.create(
 			{
 				url,
 				type: "normal",
-				// Let the browser place the minimum-size window on screen first.
+				state: "normal",
+				left: initial.popup.left,
 				top: layout.popup.top,
 				width: layout.popup.width,
 				height: layout.popup.height,
-				focused: true,
+				// Fit behind Trakt before restoring it: no grey panel flashing on the left.
+				focused: false,
 			},
 			(newWindow) => {
 				if (chrome.runtime.lastError || !newWindow?.id) {
@@ -178,18 +262,24 @@ function createStremioPopup(url, layout, sender, sendResponse) {
 					return;
 				}
 
+				sendResponse = beginStremioPlacement(newWindow.id, sendResponse);
 				saveWindowId(newWindow.id);
+				chrome.storage.local.set({ [STREMIO_MIN_WIDTH_KEY]: newWindow.width });
 				const fittedLayout = getPopupLayout(layout.displayBounds, newWindow.width);
-				normalizeWindowFast(sender?.tab?.windowId, fittedLayout.trakt, () => {
+				rememberStremioSourceState(newWindow.id, layout.sourceWindow, () => {
 					normalizeWindowFast(newWindow.id, fittedLayout.popup, () => {
-						focusStremioWindow(newWindow.id, sendResponse);
+						normalizeWindowFast(sender?.tab?.windowId, fittedLayout.trakt, () => {
+							focusStremioWindow(newWindow.id, sendResponse, sender?.tab?.windowId, fittedLayout.trakt);
+						});
 					});
 				});
 			}
 		);
+	});
 }
 
 function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendResponse) {
+	sendResponse = beginStremioPlacement(existingWindow.id, sendResponse);
 	const firstTab = existingWindow.tabs?.[0];
 
 	const openAfterPreLayout = () => {
@@ -206,7 +296,7 @@ function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendRespo
 						}
 
 						normalizeWindowFast(existingWindow.id, layout.popup, () => {
-							focusStremioWindow(existingWindow.id, sendResponse);
+							focusStremioWindow(existingWindow.id, sendResponse, sender?.tab?.windowId, layout.trakt);
 						});
 					});
 				} else {
@@ -219,7 +309,7 @@ function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendRespo
 						}
 
 						normalizeWindowFast(existingWindow.id, layout.popup, () => {
-							focusStremioWindow(existingWindow.id, sendResponse);
+							focusStremioWindow(existingWindow.id, sendResponse, sender?.tab?.windowId, layout.trakt);
 						});
 					});
 				}
@@ -229,7 +319,7 @@ function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendRespo
 
 	// Windows/Vivaldi decide the minimum outer width. Measure it rather than
 	// reserving a guessed 560-610 pixels, then give the remaining space to Trakt.
-	normalizeWindowFast(existingWindow.id, {
+	rememberStremioSourceState(existingWindow.id, layout.sourceWindow, () => normalizeWindowFast(existingWindow.id, {
 		...layout.popup, left: existingWindow.left, width: 1,
 	}, (ok, minimumWindow) => {
 		if (!ok) {
@@ -237,145 +327,81 @@ function moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendRespo
 			return;
 		}
 		layout = {
+			...layout,
 			...getPopupLayout(layout.displayBounds, minimumWindow?.width || existingWindow.width),
 			displayBounds: layout.displayBounds,
 		};
+		chrome.storage.local.set({ [STREMIO_MIN_WIDTH_KEY]: minimumWindow?.width || existingWindow.width });
 		openAfterPreLayout();
-	});
+	}));
 }
 
 function openOrReuseStremioWindow(url, layout, sender, sendResponse) {
-	getSavedWindowId((savedWindowId) => {
-		if (!savedWindowId) {
-			createStremioPopup(url, layout, sender, sendResponse);
-			return;
-		}
-
-		chrome.windows.get(savedWindowId, { populate: true }, (existingWindow) => {
-			if (chrome.runtime.lastError || !existingWindow?.id) {
-				forgetWindowId();
+	chrome.windows.get(sender?.tab?.windowId, (sourceWindow) => {
+		if (readLastError() || !sourceWindow) { sendResponse({ ok: false }); return; }
+		layout = { ...layout, sourceWindow };
+		getSavedWindowId((savedWindowId) => {
+			if (!savedWindowId) {
 				createStremioPopup(url, layout, sender, sendResponse);
 				return;
 			}
 
-			moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendResponse);
-		});
-	});
-}
+			chrome.windows.get(savedWindowId, { populate: true }, (existingWindow) => {
+				if (chrome.runtime.lastError || !existingWindow?.id) {
+					forgetWindowId();
+					createStremioPopup(url, layout, sender, sendResponse);
+					return;
+				}
 
-function getImdbRatingsPopupUrl(imdbId) {
-	return `https://www.imdb.com/title/${imdbId}/ratings/?cinetrakt_ratings_popup=1`;
-}
-
-function getImdbIdFromRatingsUrl(url) {
-	return String(url || "").match(/\/title\/(tt\d{7,})\/ratings\/?/i)?.[1] || "";
-}
-
-function focusImdbRatingsWindow(windowId, sendResponse) {
-	safeWindowUpdate(windowId, { focused: true }, (ok) => {
-		sendResponse({ ok: !!ok, windowId });
-	});
-}
-
-function createImdbRatingsPopup(imdbId, layout, sendResponse) {
-	chrome.windows.create({
-		url: getImdbRatingsPopupUrl(imdbId),
-		type: "popup",
-		left: layout.left,
-		top: layout.top,
-		width: layout.width,
-		height: layout.height,
-		focused: true,
-	}, (newWindow) => {
-		if (readLastError() || !newWindow?.id) {
-			sendResponse({ ok: false });
-			return;
-		}
-
-		saveImdbRatingsWindowId(newWindow.id);
-		sendResponse({ ok: true, windowId: newWindow.id });
-	});
-}
-
-function reuseImdbRatingsPopup(existingWindow, imdbId, layout, sendResponse) {
-	const tab = existingWindow.tabs?.[0];
-	if (!tab?.id) {
-		forgetImdbRatingsWindowId();
-		createImdbRatingsPopup(imdbId, layout, sendResponse);
-		return;
-	}
-
-	const currentImdbId = getImdbIdFromRatingsUrl(tab.url);
-	const isPopupUrl = String(tab.url || "").includes("cinetrakt_ratings_popup=1");
-	if (currentImdbId === imdbId && isPopupUrl) {
-		safeTabUpdate(tab.id, { active: true }, () => {
-			focusImdbRatingsWindow(existingWindow.id, sendResponse);
-		});
-		return;
-	}
-
-	safeTabUpdate(tab.id, { url: getImdbRatingsPopupUrl(imdbId), active: true }, (ok) => {
-		if (!ok) {
-			forgetImdbRatingsWindowId();
-			createImdbRatingsPopup(imdbId, layout, sendResponse);
-			return;
-		}
-		focusImdbRatingsWindow(existingWindow.id, sendResponse);
-	});
-}
-
-function resizeImdbRatingsPopup(message, sender, sendResponse) {
-	const senderWindowId = sender?.tab?.windowId;
-	const senderUrl = sender?.tab?.url || sender?.url || "";
-	const requestedWidth = Number(message.width);
-	const requestedHeight = Number(message.height);
-	if (!senderWindowId
-		|| !senderUrl.includes("cinetrakt_ratings_popup=1")
-		|| !Number.isFinite(requestedWidth)
-		|| !Number.isFinite(requestedHeight)) {
-		sendResponse({ ok: false });
-		return;
-	}
-
-	getSavedImdbRatingsWindowId((savedWindowId) => {
-		if (savedWindowId !== senderWindowId) {
-			sendResponse({ ok: false });
-			return;
-		}
-
-		getDisplayBoundsForSource(sender, null, (displayBounds) => {
-			const layout = getResizedImdbRatingsPopupLayout(displayBounds, requestedWidth, requestedHeight);
-			safeWindowUpdate(senderWindowId, { ...layout, state: "normal" }, (ok) => {
-				sendResponse({ ok: !!ok, windowId: senderWindowId, layout: ok ? layout : undefined });
+				moveAndReuseStremioPopup(existingWindow, url, layout, sender, sendResponse);
 			});
 		});
 	});
 }
 
-function openOrReuseImdbRatingsWindow(imdbId, layout, sendResponse) {
-	getSavedImdbRatingsWindowId((savedWindowId) => {
-		if (!savedWindowId) {
-			createImdbRatingsPopup(imdbId, layout, sendResponse);
-			return;
-		}
+const externalRatingsCache = new Map();
 
-		chrome.windows.get(savedWindowId, { populate: true }, (existingWindow) => {
-			if (readLastError() || !existingWindow?.id) {
-				forgetImdbRatingsWindowId();
-				createImdbRatingsPopup(imdbId, layout, sendResponse);
-				return;
-			}
-			reuseImdbRatingsPopup(existingWindow, imdbId, layout, sendResponse);
-		});
-	});
+function getTraktExternalRatings(pathname, seasonsOnly = false) {
+	const resultKey = seasonsOnly ? 'seasons' : 'ratings';
+	const apiUrl = seasonsOnly ? getSeasonRatingsUrl(pathname) : getTraktApiRatingsUrl(pathname);
+	if (!apiUrl) return Promise.resolve({ [resultKey]: null, retryable: false });
+	const cached = externalRatingsCache.get(apiUrl);
+	if (cached && cached.expiresAt > Date.now()) return cached.promise;
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), TRAKT_LOOKUP_TIMEOUT_MS);
+	const entry = { expiresAt: Infinity, promise: null };
+	entry.promise = (async () => {
+		try {
+			const response = await fetch(apiUrl, {
+				signal: controller.signal, credentials: 'omit',
+				headers: { 'trakt-api-key': TRAKT_API_CLIENT_ID, 'trakt-api-version': '2' },
+			});
+			if (!response.ok) throw new Error(`Trakt ratings: ${response.status}`);
+			const body = await response.json();
+			const rating = seasonsOnly ? parseSeasonRatings(body) : findExternalRatingsInTraktResponse(body);
+			entry.expiresAt = Date.now() + (rating ? (seasonsOnly ? 3 : 6) * 60 * 60 * 1000 : 5 * 60 * 1000);
+			return { [resultKey]: rating, ...(seasonsOnly ? { posters: parseSeasonPosters(body), details: parseSeasonDetails(body) } : {}), retryable: false };
+		} catch {
+			entry.expiresAt = Date.now() + 1000;
+			return { [resultKey]: null, retryable: true };
+		} finally {
+			clearTimeout(timeout);
+		}
+	})();
+	externalRatingsCache.set(apiUrl, entry);
+	if (externalRatingsCache.size > 100) externalRatingsCache.delete(externalRatingsCache.keys().next().value);
+	return entry.promise;
 }
 
 async function resolveTraktImdbId(pathname) {
 	const apiUrl = getTraktApiMediaUrl(pathname);
 	if (!apiUrl) return '';
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), TRAKT_LOOKUP_TIMEOUT_MS);
 
 	try {
 		const response = await fetch(apiUrl, {
+			signal: controller.signal,
 			credentials: 'omit',
 			headers: {
 				'trakt-api-key': TRAKT_API_CLIENT_ID,
@@ -387,24 +413,46 @@ async function resolveTraktImdbId(pathname) {
 	} catch (error) {
 		console.warn('CineTrakt: official Trakt API IMDb lookup failed', error);
 		return '';
+	} finally {
+		clearTimeout(timeout);
 	}
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type === MESSAGE_TYPES.GET_TRAKT_RATINGS || message?.type === MESSAGE_TYPES.GET_SHOW_SEASON_RATINGS) {
+		// sender.url can retain the document's initial URL across Trakt's SPA
+		// navigation. The browser tab URL tracks the currently displayed fiche.
+		const senderUrl = sender?.tab?.url || sender?.url || '';
+		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || sender.frameId !== 0
+			|| new URL(senderUrl).pathname.replace(/\/$/, '') !== String(message.pathname || '').replace(/\/$/, '')) {
+			sendResponse({ ok: false });
+			return false;
+		}
+		getTraktExternalRatings(message.pathname, message.type === MESSAGE_TYPES.GET_SHOW_SEASON_RATINGS)
+			.then((result) => sendResponse({ ok: !result.retryable, ...result }));
+		return true;
+	}
+
 	if (message?.type === MESSAGE_TYPES.HANDOFF_TRAKT_SOUNDTRACK) {
 		const senderUrl = sender?.tab?.url || sender?.url || '';
 		if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || sender.frameId !== 0
-			|| !sender.tab?.active || !/^\/(movies|shows)\/[^/]+\/?$/.test(new URL(senderUrl).pathname)) return false;
+			|| !sender.tab?.active || !/^\/(movies|shows)\/[^/]+\/?$/.test(new URL(senderUrl).pathname)) {
+			sendResponse({ ok: false }); return false;
+		}
+		const serial = ++soundtrackClaimSerial;
 		chrome.tabs.query({ url: `${TRAKT_APP_ORIGIN}/*` }, (tabs) => {
-			if (readLastError()) return;
-			for (const tab of tabs || []) {
-				if (!tab.id || tab.id === sender.tab.id || !hasExactOrigin(tab.url, TRAKT_APP_ORIGIN)) continue;
-				if (!/^\/(movies|shows)\/[^/]+\/?$/.test(new URL(tab.url).pathname)) continue;
-				chrome.tabs.sendMessage(tab.id, { type: MESSAGE_TYPES.HANDOFF_TRAKT_SOUNDTRACK },
-					{ frameId: 0 }, () => { readLastError(); });
+			if (readLastError() || serial !== soundtrackClaimSerial) { sendResponse({ ok: false }); return; }
+			const others = (tabs || []).filter(tab => tab.id && tab.id !== sender.tab.id
+				&& hasExactOrigin(tab.url, TRAKT_APP_ORIGIN) && /^\/(movies|shows)\/[^/]+\/?$/.test(new URL(tab.url).pathname));
+			let remaining = others.length;
+			const complete = () => sendResponse({ ok: serial === soundtrackClaimSerial, claimSerial: serial });
+			if (!remaining) { complete(); return; }
+			for (const tab of others) {
+				chrome.tabs.sendMessage(tab.id, { type: MESSAGE_TYPES.HANDOFF_TRAKT_SOUNDTRACK, claimSerial: serial },
+					{ frameId: 0 }, () => { readLastError(); if (!--remaining) complete(); });
 			}
 		});
-		return false;
+		return true;
 	}
 
 	if (message?.type === MESSAGE_TYPES.CLEAR_STREMIO_STREAM_HOVER) {
@@ -437,25 +485,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		return true;
 	}
 
-	if (message?.type === MESSAGE_TYPES.RESIZE_IMDB_RATINGS_POPUP) {
-		resizeImdbRatingsPopup(message, sender, sendResponse);
-		return true;
-	}
-
-	if (message?.type === MESSAGE_TYPES.OPEN_IMDB_RATINGS_POPUP) {
-		const imdbId = String(message.imdbId || "");
-		const senderUrl = sender?.tab?.url || sender?.url || "";
-		if (!/^tt\d{7,}$/.test(imdbId) || !hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN)) {
-			sendResponse({ ok: false });
-			return false;
-		}
-
-		getDisplayBoundsForSource(sender, message.screenBounds, (displayBounds) => {
-			openOrReuseImdbRatingsWindow(imdbId, getImdbRatingsPopupLayout(displayBounds), sendResponse);
-		});
-		return true;
-	}
-
 	if (message?.type !== MESSAGE_TYPES.OPEN_STREMIO_WEB || !message.url) return false;
 	const senderUrl = sender?.tab?.url || sender?.url || "";
 	if (!hasExactOrigin(senderUrl, TRAKT_APP_ORIGIN) || !isStremioWebUrl(message.url)) {
@@ -472,10 +501,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.windows.onRemoved.addListener((windowId) => {
+	restoreStremioSourceAfterClose(windowId);
 	getSavedWindowId((savedWindowId) => {
 		if (savedWindowId === windowId) forgetWindowId();
-	});
-	getSavedImdbRatingsWindowId((savedWindowId) => {
-		if (savedWindowId === windowId) forgetImdbRatingsWindowId();
 	});
 });

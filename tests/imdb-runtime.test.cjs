@@ -11,10 +11,10 @@ function element({ id = '', classes = [] } = {}) {
 	};
 }
 
-test('IMDb route keys include title subpages and popup parameters', () => {
+test('IMDb route keys include title subpages and collector parameters', () => {
 	assert.equal(
-		getRouteKey({ pathname: '/title/tt1520211/ratings', search: '?cinetrakt_ratings_popup=1', hash: '' }),
-		'/title/tt1520211/ratings?cinetrakt_ratings_popup=1',
+		getRouteKey({ pathname: '/title/tt1520211/ratings', search: '?cinetrakt_ratings_data=1', hash: '' }),
+		'/title/tt1520211/ratings?cinetrakt_ratings_data=1',
 	);
 });
 

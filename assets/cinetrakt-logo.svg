@@ -1,0 +1,28 @@
+<!-- CineTrakt: official Dark Background Logo Mark from https://app.trakt.tv/branding,
+     with an open clapper above it. The square mark retains its original proportions,
+     paths and colors (#6438d0 = oklch(49% .217 289) in sRGB). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80">
+  <defs>
+    <clipPath id="clapper"><rect x="12" y="12" width="56" height="6" rx="1.5"/></clipPath>
+    <clipPath id="rail"><rect x="12" y="18" width="56" height="5" rx="1"/></clipPath>
+  </defs>
+  <g transform="translate(12 23) scale(1.1666666667)">
+    <rect width="48" height="48" rx="10.8" fill="#6438d0"/>
+    <g transform="translate(9.6 9.6) scale(0.47213)" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M56.00 38.95A27.5 27.5 0 1 1 36.19 3.20"/>
+      <path d="M16.93 27.11L35.82 42.96M29.92 34.75L53.89 6.17M56.69 18.31L42.49 35.24M26.88 22.41L23.36 19.45"/>
+    </g>
+  </g>
+  <g clip-path="url(#rail)">
+    <rect x="12" y="18" width="56" height="5" fill="#24212e"/>
+    <path d="M20 18h8l-4 5h-8zm18 0h8l-4 5h-8zm18 0h8l-4 5h-8z" fill="#fff"/>
+  </g>
+  <g transform="rotate(-12 12 18)">
+    <g clip-path="url(#clapper)">
+      <rect x="12" y="12" width="56" height="6" fill="#fff"/>
+      <path d="M19 12h8l5 6h-8zm18 0h8l5 6h-8zm18 0h8l5 6h-8z" fill="#24212e"/>
+    </g>
+  </g>
+  <circle cx="14.5" cy="20.5" r="2.2" fill="#24212e"/>
+  <circle cx="14.5" cy="20.5" r="0.8" fill="#fff"/>
+</svg>

@@ -3,9 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
 	getFallbackDisplayBounds,
-	getImdbRatingsPopupLayout,
 	getPopupLayout,
-	getResizedImdbRatingsPopupLayout,
 	pickBestDisplayForWindow,
 } = require('../window-layout.js');
 
@@ -43,22 +41,6 @@ test('display selection favors the largest intersection', () => {
 		{ id: 'right', workArea: { left: 0, top: 0, width: 2560, height: 1440 } },
 	];
 	assert.equal(pickBestDisplayForWindow({ left: 300, top: 100, width: 1200, height: 900 }, displays).id, 'right');
-});
-
-test('IMDb ratings layouts stay centered and clamped to the work area', () => {
-	const display = { left: 1920, top: 0, width: 2560, height: 1400 };
-	assert.deepEqual(getImdbRatingsPopupLayout(display), {
-		left: 2540,
-		top: 250,
-		width: 1320,
-		height: 900,
-	});
-	assert.deepEqual(getResizedImdbRatingsPopupLayout(display, 9999, 100), {
-		left: 1960,
-		top: 550,
-		width: 2480,
-		height: 300,
-	});
 });
 
 test('screen bounds fallback preserves browser-provided monitor coordinates', () => {

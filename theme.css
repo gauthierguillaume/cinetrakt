@@ -1,0 +1,9 @@
+/* Trakt's current palette. On Trakt itself, native tokens keep CineTrakt in sync. */
+:root {
+	--cinetrakt-accent: var(--purple-500, oklch(56.1% .205 289));
+	--cinetrakt-accent-hover: var(--purple-600, oklch(49% .217 289));
+	--cinetrakt-accent-text: var(--color-accent-purple, oklch(71% .1599 289));
+	--cinetrakt-accent-focus: var(--purple-200, oklch(81% .1128 289));
+	--cinetrakt-accent-muted: var(--purple-800, oklch(35.5% .1394 289));
+	--cinetrakt-accent-deep: var(--purple-900, oklch(29% .1128 289));
+}

@@ -10,12 +10,6 @@
 		}));
 	}
 
-	function getTitleRange(text) {
-		const source = String(text || '');
-		const end = source.search(/[\r\n]/);
-		return { start: 0, end: end === -1 ? source.length : end };
-	}
-
 	function formatFileSizeText(text) {
 		const source = String(text || '');
 		const ranges = getFileSizeRanges(source).reverse();
@@ -168,7 +162,7 @@
 	}
 
 	globalThis.CineTraktStreamFormatting = Object.freeze({
-		getFileSizeRanges, formatFileSizeText, getTitleRange, getBadgeIds, getSourceLineIndexes,
+		getFileSizeRanges, formatFileSizeText, getBadgeIds, getSourceLineIndexes,
 		getTechnicalBadgeIds, getVideoBadgeParts, getAudioChannelParts, getEditionBadgeParts,
 		getProviderPrefix, getDescriptionGroups,
 	});

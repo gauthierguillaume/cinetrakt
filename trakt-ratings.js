@@ -3,7 +3,6 @@
 	const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
 
 	const {
-		getCurrentScreenBounds: getCurrentScreenBoundsForPopup,
 		sendRuntimeMessage: sendCinetraktRuntimeMessage,
 	} = globalThis.CineTraktStremioOpen;
 	const {
@@ -447,8 +446,8 @@ function resetTraktRatingColors() {
 
 
 
-/* Sur la fiche, CineTrakt garde uniquement IMDb. Le clic sur la note ouvre
-	IMDb, tandis que la flèche native voisine conserve le panneau Ratings. */
+/* La fiche conserve IMDb et ajoute la note Letterboxd fournie par Trakt.
+   La flèche native conserve le panneau Ratings. */
 function injectWatchOnStremioTraktMoreRatingsStyles() {
 	if (document.getElementById('watch-on-stremio-trakt-more-ratings-styles')) return;
 
@@ -468,6 +467,44 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 			cursor: pointer !important;
 		}
 
+		.cinetrakt-rating-cards { display: inline-flex; flex-wrap: wrap; max-width: 100%; gap: var(--gap-s, 12px); }
+		.cinetrakt-rating-card {
+			box-sizing: border-box;
+			display: flex;
+			flex: 0 0 auto;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			gap: var(--gap-s, 12px);
+			width: 112px;
+			min-height: 110px;
+			padding: var(--ni-16, 16px) var(--ni-12, 12px);
+			background: var(--color-card-background, #100e13);
+			border-radius: var(--border-radius-m, 12px);
+			color: var(--color-foreground, #faf9fc);
+			text-align: center;
+			text-decoration: none;
+		}
+		.cinetrakt-rating-card .cinetrakt-rating-logo {
+			display: block; height: var(--ni-28, 28px); width: auto; max-width: 100%;
+			transition: transform 160ms ease;
+		}
+		.cinetrakt-rating-card:hover .cinetrakt-rating-logo { transform: scale(1.1); }
+		.cinetrakt-rating-card:hover { text-decoration: none; }
+		.cinetrakt-rating-card:focus-visible {
+			outline: 2px solid var(--cinetrakt-accent-focus);
+			outline-offset: 3px;
+		}
+		.cinetrakt-rating-info { display: flex; flex-direction: column; align-items: center; gap: var(--gap-xs, 6px); }
+		.cinetrakt-rating-score { font-size: var(--ni-20, 20px); font-weight: 700; line-height: .9; font-variant-numeric: tabular-nums; }
+		.cinetrakt-rating-votes {
+			display: inline-flex; align-items: center; gap: var(--gap-xxs, 4px);
+			min-height: var(--font-size-text, 14px); color: var(--color-text-secondary, #a09ba6);
+			font-size: var(--font-size-tag, 10px); font-weight: 700; line-height: .9;
+		}
+		.cinetrakt-rating-votes img { display: block; width: 10px; height: 10px; }
+		.cinetrakt-rating-votes[hidden] { display: none; }
+
 		.wos-imdb-ratings-popup-row {
 			display: inline-flex !important;
 			flex-flow: row nowrap !important;
@@ -476,73 +513,8 @@ function injectWatchOnStremioTraktMoreRatingsStyles() {
 			max-width: 100% !important;
 			vertical-align: middle !important;
 		}
+		.wos-imdb-ratings-popup-row:has(.cinetrakt-rating-cards) { flex-wrap: wrap !important; gap: 8px; }
 
-		.wos-imdb-ratings-popup-button {
-			appearance: none !important;
-			box-sizing: border-box !important;
-			display: inline-flex !important;
-			align-items: center !important;
-			justify-content: center !important;
-			flex: 0 0 auto !important;
-			width: 38px !important;
-			height: 24px !important;
-			margin: 0 0 0 6px !important;
-			padding: 0 !important;
-			border: 0 !important;
-			border-radius: 5px !important;
-			color: rgba(255, 255, 255, 0.52) !important;
-			background: transparent !important;
-			box-shadow: none !important;
-			outline: none !important;
-			cursor: pointer !important;
-			pointer-events: auto !important;
-			position: relative !important;
-			z-index: 3 !important;
-			transition: background-color 140ms ease, color 140ms ease, transform 140ms ease !important;
-		}
-
-		.wos-imdb-ratings-popup-button:hover {
-			color: rgba(255, 255, 255, 0.9) !important;
-			background: rgba(255, 255, 255, 0.08) !important;
-			border: 0 !important;
-			box-shadow: none !important;
-			transform: scale(1.04) !important;
-		}
-
-		.wos-imdb-ratings-popup-button:focus-visible {
-			outline: 1px solid rgba(255, 255, 255, 0.72) !important;
-			outline-offset: 2px !important;
-		}
-
-		.wos-imdb-ratings-popup-button svg {
-			display: block !important;
-			width: 31px !important;
-			height: 15px !important;
-			pointer-events: none !important;
-			transform: scale(1) !important;
-			transform-origin: center !important;
-			transition: transform 140ms ease !important;
-		}
-
-		.wos-imdb-ratings-popup-button rect {
-			fill: currentColor !important;
-			transition: fill 160ms ease !important;
-		}
-
-		.wos-imdb-ratings-popup-button .wos-grid-blue { fill: #3b82f6 !important; }
-		.wos-imdb-ratings-popup-button .wos-grid-green { fill: #22c55e !important; }
-		.wos-imdb-ratings-popup-button .wos-grid-yellow { fill: #eab308 !important; }
-		.wos-imdb-ratings-popup-button .wos-grid-pink { fill: #ec4899 !important; }
-		.wos-imdb-ratings-popup-button .wos-grid-purple { fill: #8b5cf6 !important; }
-
-		.wos-imdb-ratings-popup-button:hover svg,
-		.wos-imdb-ratings-popup-button:focus-visible svg {
-			transform: scale(1.04) !important;
-		}
-
-		.wos-imdb-ratings-popup-button[hidden] {
-			display: none !important;
-		}
 	`;
 	document.head.appendChild(style);
 }
@@ -645,75 +617,19 @@ function resetWatchOnStremioImdbDirectLinks() {
 	});
 }
 
-function openWatchOnStremioImdbRatingsPopup(imdbId) {
-	if (!/^tt\d{7,}$/.test(imdbId)) return;
-
-	sendCinetraktRuntimeMessage({
-		type: MESSAGE_TYPES.OPEN_IMDB_RATINGS_POPUP,
-		imdbId,
-		screenBounds: getCurrentScreenBoundsForPopup(),
-	});
-}
-
 function createWatchOnStremioImdbRatingsPopupButton(imdbId) {
-	const button = document.createElement('button');
-	button.type = 'button';
-	button.className = 'wos-imdb-ratings-popup-button';
-	button.dataset.imdbId = imdbId;
-	button.setAttribute('aria-label', 'Open IMDb episode ratings');
-	button.setAttribute('title', 'Open IMDb episode ratings');
-	button.innerHTML = `
-		<svg viewBox="0 0 31 15" width="31" height="15" aria-hidden="true" focusable="false">
-			<rect class="wos-grid-blue" x="0" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="4" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-yellow" x="8" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-pink" x="12" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-purple" x="16" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-blue" x="20" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="24" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-yellow" x="28" y="0" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-pink" x="0" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-purple" x="4" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-blue" x="8" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="12" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-yellow" x="16" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-pink" x="20" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-purple" x="24" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-blue" x="28" y="4" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="0" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-yellow" x="4" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-pink" x="8" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-purple" x="12" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-blue" x="16" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="20" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-yellow" x="24" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-pink" x="28" y="8" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-purple" x="0" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-blue" x="4" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="8" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-yellow" x="12" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-pink" x="16" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-purple" x="20" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-blue" x="24" y="12" width="3" height="3" rx="0.75"></rect>
-			<rect class="wos-grid-green" x="28" y="12" width="3" height="3" rx="0.75"></rect>
-		</svg>
-	`;
-	button.addEventListener('click', (event) => {
-		event.preventDefault();
-		event.stopPropagation();
-		openWatchOnStremioImdbRatingsPopup(button.dataset.imdbId || '');
-	});
-	return button;
+	return globalThis.CineTraktSeasonChart.createButton(imdbId,
+		id => globalThis.CineTraktImdbPanel.open(id));
 }
 
-function updateWatchOnStremioTraktRatingsVisibility(summaryRatings) {
+function updateWatchOnStremioTraktRatingsVisibility(summaryRatings, hasCards = false) {
 	if (!summaryRatings) return;
 
 	const ratingItems = getWatchOnStremioTraktRatingItems(summaryRatings);
 	const imdbItem = ratingItems.find(isWatchOnStremioImdbRatingItem);
 
 	ratingItems.forEach((item) => {
-		if (item === imdbItem) {
+		if (item === imdbItem && !hasCards) {
 			item.classList.remove('wos-trakt-rating-hidden');
 		} else {
 			item.classList.add('wos-trakt-rating-hidden');
@@ -785,6 +701,101 @@ function getWatchOnStremioCanonicalRatingsPopupButton() {
 	return popupButton;
 }
 
+const cinetraktExternalRatings = new Map();
+
+function getCinetraktExternalRatings(seasonsOnly = false) {
+	const route = window.location.pathname;
+	if (!/^\/(movies|shows)\/[a-z0-9-]+\/?$/i.test(route) || (seasonsOnly && !route.startsWith('/shows/'))) return null;
+	const cacheKey = seasonsOnly ? `seasons:${route}` : route;
+	const feature = seasonsOnly ? 'imdbEpisodeRatingsPopup' : 'traktRatingsToggle';
+	const cached = cinetraktExternalRatings.get(cacheKey);
+	if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+	// Same source as the native breakdown, without opening or moving the panel.
+	if (cached?.retryTimer != null) clearTimeout(cached.retryTimer);
+	const entry = { value: null, expiresAt: Infinity, attempt: cached && !cached.value && cached.attempt < 3 ? cached.attempt + 1 : 1, retryTimer: null };
+	cinetraktExternalRatings.set(cacheKey, entry);
+	if (cinetraktExternalRatings.size > 50) cinetraktExternalRatings.delete(cinetraktExternalRatings.keys().next().value);
+	const complete = (response, error) => {
+		entry.value = response?.ok ? (seasonsOnly ? response.seasons : response.ratings) || null : null;
+		entry.expiresAt = Date.now() + (entry.value ? (seasonsOnly ? 3 : 6) * 60 * 60 * 1000 : 60 * 1000);
+		// A rejection during navigation or a temporary network/worker error must
+		// not leave the old rating row stuck until the user reloads the page.
+		if ((error || !response?.ok || response.retryable) && entry.attempt < 3
+			&& window.location.pathname === route && isCinetraktFeatureEnabled(feature)) {
+			entry.retryTimer = setTimeout(() => {
+				entry.retryTimer = null;
+				if (cinetraktExternalRatings.get(cacheKey) !== entry) return;
+				entry.expiresAt = 0;
+				if (window.location.pathname !== route || !isCinetraktFeatureEnabled(feature)) return;
+				globalThis.CineTraktTraktRuntime?.schedule('external-ratings-retry', 0);
+			}, entry.attempt === 1 ? 1500 : 4000);
+		}
+		if (window.location.pathname === route && isCinetraktFeatureEnabled(feature)) {
+			globalThis.CineTraktTraktRuntime?.schedule('external-ratings-resolved', 0);
+		}
+	};
+	const requested = sendCinetraktRuntimeMessage({ type: seasonsOnly ? MESSAGE_TYPES.GET_SHOW_SEASON_RATINGS : MESSAGE_TYPES.GET_TRAKT_RATINGS, pathname: route }, complete);
+	if (!requested) complete(null, true);
+	return null;
+}
+
+function updateCinetraktRatingCards() {
+	const existing = [...document.querySelectorAll('.cinetrakt-rating-cards')];
+	let group = existing.shift() || null;
+	existing.forEach((duplicate) => duplicate.remove());
+	const ratings = isCinetraktFeatureEnabled('traktRatingsToggle') ? getCinetraktExternalRatings() : null;
+	if (!ratings) { group?.remove(); return null; }
+	if (!group) { group = document.createElement('span'); group.className = 'cinetrakt-rating-cards'; }
+	let position = 0;
+	for (const [source, label, multiplier, urlPattern] of [
+		['imdb', 'IMDb', 1, /^https:\/\/(?:www\.)?imdb\.com\/title\/tt\d{7,}\/?$/i],
+		['mal', 'MyAnimeList', 1, /^https:\/\/(?:www\.)?myanimelist\.net\/anime\/[1-9]\d*(?:\/[a-z0-9_-]+)?\/?$/i],
+		['letterboxd', 'Letterboxd', 2, /^https:\/\/letterboxd\.com\/film\/[a-z0-9-]+\/?$/i],
+	]) {
+		const data = ratings[source];
+		let card = group.querySelector(`[data-source="${source}"]`);
+		if (!data || !Number.isFinite(data.rating) || data.rating < 0 || data.rating * multiplier > 10 || !urlPattern.test(data.url)) {
+			card?.remove(); continue;
+		}
+		if (!card) {
+			card = document.createElement('a');
+			card.className = 'cinetrakt-rating-card';
+			card.dataset.source = source;
+			card.target = '_blank';
+			card.rel = 'noopener noreferrer';
+			card.title = `Open on ${label}`;
+			card.innerHTML = '<img class="cinetrakt-rating-logo" alt=""><span class="cinetrakt-rating-info"><span class="cinetrakt-rating-score"></span><span class="cinetrakt-rating-votes"><img alt=""><span></span></span></span>';
+			card.querySelector('.cinetrakt-rating-logo').src = chrome.runtime.getURL(`assets/ratings/${source}.svg`);
+			card.querySelector('.cinetrakt-rating-votes img').src = chrome.runtime.getURL('assets/ratings/voters.svg');
+			group.appendChild(card);
+		}
+		if (group.children[position] !== card) group.insertBefore(card, group.children[position] || null);
+		position++;
+		if (card.href !== data.url) card.href = data.url;
+		// Trakt displays Letterboxd to one decimal: double that displayed score,
+		// so its native 3.6 consistently becomes 7.2 rather than using hidden precision.
+		const score = (multiplier === 2 ? Number(data.rating.toFixed(1)) : data.rating) * multiplier;
+		const text = score.toFixed(1).replace(/\.0$/, '');
+		const scoreElement = card.querySelector('.cinetrakt-rating-score');
+		setCinetraktTextIfChanged(scoreElement, text);
+		const votes = card.querySelector('.cinetrakt-rating-votes');
+		const hasVotes = Number.isSafeInteger(data.votes) && data.votes >= 0;
+		if (votes.hidden === hasVotes) votes.hidden = !hasVotes;
+		if (hasVotes) {
+			setCinetraktTextIfChanged(votes.querySelector('span'), new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(data.votes));
+			const fullCount = `${new Intl.NumberFormat('en').format(data.votes)} votes`;
+			if (votes.title !== fullCount) votes.title = fullCount;
+		}
+		const ariaLabel = `${label}: ${text}${hasVotes ? `, ${new Intl.NumberFormat('en').format(data.votes)} votes` : ''}`;
+		if (card.getAttribute('aria-label') !== ariaLabel) card.setAttribute('aria-label', ariaLabel);
+		if (isCinetraktFeatureEnabled('traktRatingColors')) setCinetraktImportantStyleIfChanged(scoreElement, 'color', getWatchOnStremioRatingColor(score).bg);
+		else removeCinetraktStyleIfPresent(scoreElement, 'color');
+	}
+	if (!group.children.length) { group.remove(); return null; }
+	return group;
+}
+
 function setupWatchOnStremioTraktMoreRatingsToggle() {
 	if (window.location.hostname !== 'app.trakt.tv') return;
 	if (!/^\/(shows|movies)\//.test(window.location.pathname)) return;
@@ -796,13 +807,12 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 
 	const ratingItems = getWatchOnStremioTraktRatingItems(summaryRatings);
 	const imdbItem = ratingItems.find(isWatchOnStremioImdbRatingItem);
-	if (!imdbItem) return;
 	const ratingsToggleEnabled = isCinetraktFeatureEnabled('traktRatingsToggle');
 	const ratingsPopupEnabled = isCinetraktFeatureEnabled('imdbEpisodeRatingsPopup');
 	const directImdbId = getWatchOnStremioImdbRatingsId(summaryRatings);
 
 	summaryRatings.querySelector(':scope > .wos-trakt-ratings-toggle')?.remove();
-	if (ratingsToggleEnabled && directImdbId) {
+	if (ratingsToggleEnabled && imdbItem && directImdbId) {
 		bindWatchOnStremioImdbDirectLink(imdbItem, directImdbId);
 	} else if (!ratingsToggleEnabled) {
 		resetWatchOnStremioImdbDirectLinks();
@@ -813,12 +823,13 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 		const route = window.location.pathname;
 		summaryRatings.dataset.cinetraktImdbDirectRequestedRoute = route;
 		getImdbIdFromTraktMediaUrl(window.location.href).then((resolvedImdbId) => {
-			if (!resolvedImdbId || window.location.pathname !== route) return;
+			if (!resolvedImdbId || window.location.pathname !== route || !isCinetraktFeatureEnabled('traktRatingsToggle')) return;
 			bindWatchOnStremioImdbDirectLink(imdbItem, resolvedImdbId);
 		});
 	}
 
 	const isShowPage = /^\/shows\/[^/]+\/?$/.test(window.location.pathname);
+	const seasonRatings = isShowPage && ratingsPopupEnabled ? getCinetraktExternalRatings(true) : null;
 	let popupButton = getWatchOnStremioCanonicalRatingsPopupButton();
 	const imdbId = isShowPage && ratingsPopupEnabled ? getWatchOnStremioImdbRatingsId(summaryRatings) : '';
 
@@ -832,14 +843,19 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	if (imdbId && popupButton && popupButton.dataset.imdbId !== imdbId) {
 		popupButton.dataset.imdbId = imdbId;
 	}
+	if (popupButton) globalThis.CineTraktSeasonChart.updateButton(popupButton, seasonRatings);
 
-	if (popupButton) {
+	const ratingCards = updateCinetraktRatingCards();
+	if (popupButton || ratingCards) {
 		const placementAnchor = getWatchOnStremioRatingsPopupPlacementAnchor(summaryRatings);
 		const popupRow = ensureWatchOnStremioRatingsPopupRow(placementAnchor);
-		if (popupRow && placementAnchor.nextElementSibling !== popupButton) {
-			// Le bouton natif IMDb + flèche reste intact. La Heatmap est son
-			// frère immédiat, donc visuellement juste à droite de la flèche.
-			placementAnchor.insertAdjacentElement('afterend', popupButton);
+		if (popupRow && ratingCards && ratingCards.nextElementSibling !== placementAnchor) {
+			popupRow.insertBefore(ratingCards, placementAnchor);
+		}
+		if (popupRow && popupButton) {
+			// Score tiles, season chart, then the unchanged native drawer arrow.
+			if (ratingCards && popupButton.nextElementSibling !== placementAnchor) popupRow.insertBefore(popupButton, placementAnchor);
+			else if (!ratingCards && placementAnchor.nextElementSibling !== popupButton) placementAnchor.insertAdjacentElement('afterend', popupButton);
 		}
 	} else {
 		resetWatchOnStremioRatingsPopupRows();
@@ -857,7 +873,7 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	}
 
 	if (ratingsToggleEnabled) {
-		updateWatchOnStremioTraktRatingsVisibility(summaryRatings);
+		updateWatchOnStremioTraktRatingsVisibility(summaryRatings, Boolean(ratingCards));
 	} else {
 		ratingItems.forEach((item) => item.classList.remove('wos-trakt-rating-hidden'));
 		summaryRatings.classList.remove('wos-trakt-ratings-imdb-only');
@@ -865,7 +881,7 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 }
 
 function resetTraktRatingsControls() {
-	document.querySelectorAll('.wos-trakt-ratings-toggle, .wos-imdb-ratings-popup-button')
+	document.querySelectorAll('.wos-trakt-ratings-toggle, .wos-imdb-ratings-popup-button, .cinetrakt-rating-cards')
 		.forEach((element) => element.remove());
 	resetWatchOnStremioImdbDirectLinks();
 	document.querySelectorAll('.wos-trakt-rating-hidden')

@@ -78,6 +78,19 @@ function injectWatchOnStremioPosterSizeStyles() {
 			min-width: 0 !important;
 		}
 
+		/* Keep the complete overview when the detail layout changes its width.
+		   Trakt's native clamp toggle can retain a stale overflow measurement. */
+		html.cinetrakt-poster-layout-enabled .trakt-summary-main-content > trakt-spoiler > .trakt-clamped-text > .line-clamp-content,
+		html.cinetrakt-poster-layout-enabled .trakt-summary-main-content > .trakt-clamped-text > .line-clamp-content {
+			display: block !important;
+			-webkit-line-clamp: unset !important;
+			overflow: visible !important;
+		}
+		html.cinetrakt-poster-layout-enabled .trakt-summary-main-content > trakt-spoiler > .trakt-clamped-text > .line-clamp-content + button,
+		html.cinetrakt-poster-layout-enabled .trakt-summary-main-content > .trakt-clamped-text > .line-clamp-content + button {
+			display: none !important;
+		}
+
 		#${CINETRAKT_STICKY_POSTER_RAIL_ID} {
 			box-sizing: border-box !important;
 			display: flex !important;
@@ -140,7 +153,7 @@ function injectWatchOnStremioPosterSizeStyles() {
 		}
 
 		.cinetrakt-sticky-poster-stage[data-cinetrakt-stremio-target="true"]:focus-visible {
-			outline: 2px solid rgba(177, 66, 211, 0.9) !important;
+			outline: 2px solid var(--cinetrakt-accent) !important;
 			outline-offset: 3px !important;
 		}
 
@@ -527,7 +540,7 @@ function attachCinetraktTriviaBesideSentiment(state) {
 	const contextualContent = state.summaryContainer.querySelector(
 		'.trakt-summary-contextual-content, [class*="trakt-summary-contextual-content"]',
 	);
-	const sentimentSection = findCinetraktSectionByTitle(contextualContent, ['sentiment']);
+	const sentimentSection = findCinetraktSectionByTitle(contextualContent, ['insights', 'sentiment']);
 	if (!contextualContent || !sentimentSection?.parentNode) return;
 
 	let triviaSection = state.triviaEntry?.element;

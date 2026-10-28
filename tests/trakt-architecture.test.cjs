@@ -15,6 +15,211 @@ const traktSoundtrackSource = read('trakt-soundtrack.js');
 const traktCustomizationsSource = read('trakt-customizations.js');
 const stremioSource = read('stremio.js');
 
+function externalRatingsRetryFixture() {
+	const vm = require('node:vm'); const requests = []; const reasons = []; const timers = new Map(); let now = 1000; let nextId = 0;
+	const location = { pathname: '/movies/first' };
+	const context = vm.createContext({ window: { location }, Date: { now: () => now },
+		CineTraktSettings: { isEnabled: () => true }, CineTraktRatingUtils: {}, CineTraktTraktStremioUi: {},
+		CineTraktExtensionProtocol: { MESSAGE_TYPES: require('../extension-protocol.js').MESSAGE_TYPES },
+		CineTraktStremioOpen: { sendRuntimeMessage(message, reply) { requests.push({ message, reply }); return true; } },
+		CineTraktTraktRuntime: { schedule: reason => reasons.push(reason) },
+		setTimeout(callback, delay) { const id = ++nextId; timers.set(id, { callback, delay }); return id; },
+		clearTimeout(id) { timers.delete(id); },
+	});
+	vm.runInContext(traktRatingsSource.replace('globalThis.CineTraktTraktRatings = api;',
+		'globalThis.getRatings = getCinetraktExternalRatings;'), context);
+	return { get: context.getRatings, requests, reasons, location, timers,
+		runRetry() { const [id, timer] = [...timers][0]; timers.delete(id); now += timer.delay; timer.callback(); },
+	};
+}
+
+test('a temporary ratings rejection retries automatically on a quiet page and then keeps its cards cached', () => {
+	const f = externalRatingsRetryFixture();
+	assert.equal(f.get(), null); f.get();
+	assert.equal(f.requests.length, 1);
+	f.requests[0].reply({ ok: false });
+	assert.equal([...f.timers.values()][0].delay, 1500);
+	f.get(); assert.equal(f.requests.length, 1, 'native page mutations do not bypass the retry delay');
+	f.runRetry();
+	assert.ok(f.reasons.includes('external-ratings-retry'), 'no user scroll or reload is needed to schedule the next update');
+	f.get(); assert.equal(f.requests.length, 2);
+	const ratings = { imdb: { rating: 7.1 } };
+	f.requests[1].reply({ ok: true, ratings });
+	assert.equal(f.get(), ratings);
+	assert.equal(f.timers.size, 0);
+	f.get(); assert.equal(f.requests.length, 2);
+});
+
+test('ratings retries are bounded, skip a different fiche, and do not retry genuinely absent ratings', () => {
+	const f = externalRatingsRetryFixture();
+	for (let attempt = 0; attempt < 3; attempt++) {
+		f.get(); f.requests.at(-1).reply({ ok: false, retryable: true });
+		if (attempt < 2) f.runRetry();
+	}
+	assert.equal(f.requests.length, 3);
+	assert.equal(f.timers.size, 0, 'retries never become permanent polling');
+	const leaving = externalRatingsRetryFixture();
+	leaving.get(); leaving.requests[0].reply({ ok: false });
+	leaving.location.pathname = '/shows/second';
+	const count = leaving.reasons.length;
+	leaving.runRetry();
+	assert.equal(leaving.reasons.length, count, 'an old fiche cannot trigger a retry on the new one');
+	leaving.location.pathname = '/movies/first'; leaving.get();
+	assert.equal(leaving.requests.length, 2, 'returning to the fiche does not retain the transient rejection');
+	leaving.requests[1].reply({ ok: true, ratings: null });
+	assert.equal(leaving.timers.size, 0, 'a successful response without ratings is not a network failure');
+});
+
+test('season data loads independently from score cards and is never requested for movies', () => {
+	const f = externalRatingsRetryFixture();
+	f.location.pathname = '/shows/supernatural';
+	f.get(); f.get(true); f.get(true);
+	assert.equal(f.requests.length, 2);
+	assert.equal(f.requests[0].message.type, 'CINETRAKT_GET_TRAKT_RATINGS');
+	assert.equal(f.requests[1].message.type, 'CINETRAKT_GET_SHOW_SEASON_RATINGS');
+	const scores = { imdb: { rating: 8.4 } }, seasons = [{ season: 1, percent: 80 }];
+	f.requests[0].reply({ ok: true, ratings: scores });
+	f.requests[1].reply({ ok: true, seasons });
+	assert.equal(f.get(), scores);
+	assert.equal(f.get(true), seasons);
+	f.location.pathname = '/movies/dune-2021';
+	assert.equal(f.get(true), null);
+	assert.equal(f.requests.length, 2);
+});
+
+test('rating cards retain native URLs and votes, double only Letterboxd, and restore settings safely', () => {
+	const vm = require('node:vm'); const requests = []; const schedules = []; const groups = [];
+	const enabled = { traktRatingsToggle: true, traktRatingColors: true };
+	const location = { pathname: '/movies/first' };
+	const makeNode = () => {
+		const attributes = new Map(); const styles = new Map(); const slots = new Map();
+		return { dataset: {}, children: [], textContent: '', hidden: false,
+			style: { getPropertyValue: key => styles.get(key) || '', getPropertyPriority: () => 'important',
+				setProperty: (key, value) => styles.set(key, value), removeProperty: key => styles.delete(key) },
+			querySelector(selector) {
+				if (selector.startsWith('[data-source=')) return this.children.find(n => n.dataset.source === selector.match(/"([^"]+)"/)[1] && !n.removed) || null;
+				if (!slots.has(selector)) slots.set(selector, makeNode());
+				return slots.get(selector);
+			},
+			getAttribute: key => attributes.get(key), setAttribute: (key, value) => attributes.set(key, value),
+			appendChild(node) { this.children.push(node); node.parent = this; },
+			insertBefore(node, reference) {
+				this.children = this.children.filter(child => child !== node);
+				const index = reference ? this.children.indexOf(reference) : this.children.length;
+				this.children.splice(index, 0, node); node.parent = this;
+			},
+			remove() { this.removed = true; if (this.parent) this.parent.children = this.parent.children.filter(n => n !== this); },
+		};
+	};
+	const context = vm.createContext({ window: { location },
+		CineTraktSettings: { isEnabled: key => enabled[key] !== false },
+		CineTraktExtensionProtocol: { MESSAGE_TYPES: require('../extension-protocol.js').MESSAGE_TYPES },
+		CineTraktStremioOpen: { sendRuntimeMessage(message, reply) { requests.push({ message, reply }); return true; } },
+		CineTraktTraktStremioUi: {}, CineTraktRatingUtils: require('../rating-utils.js'),
+		CineTraktTraktRuntime: { schedule: (...args) => schedules.push(args) },
+		chrome: { runtime: { getURL: path => `chrome-extension://test/${path}` } },
+		document: { querySelectorAll: () => groups.filter(group => !group.removed), createElement: makeNode },
+	});
+	vm.runInContext(traktRatingsSource.replace('globalThis.CineTraktTraktRatings = api;',
+		'globalThis.updateLink = updateCinetraktRatingCards;'), context);
+	assert.equal(context.updateLink(), null);
+	assert.equal(context.updateLink(), null);
+	assert.equal(requests.length, 1, 'page mutations must not duplicate a pending request');
+	location.pathname = '/movies/second';
+	const firstData = {
+		imdb: { rating: 7.1, url: 'https://www.imdb.com/title/tt20969586/', votes: 275800 },
+		letterboxd: { rating: 3.56, url: 'https://letterboxd.com/film/first-film', votes: 1800000 },
+	};
+	requests[0].reply({ ok: true, ratings: firstData });
+	assert.equal(schedules.length, 0, 'a late response cannot update a different film');
+	location.pathname = '/movies/first';
+	const firstGroup = context.updateLink(); groups.push(firstGroup);
+	const first = firstGroup.querySelector('[data-source="letterboxd"]');
+	const imdb = firstGroup.querySelector('[data-source="imdb"]');
+	assert.equal(first.querySelector('.cinetrakt-rating-score').textContent, '7.2');
+	assert.equal(imdb.querySelector('.cinetrakt-rating-score').textContent, '7.1');
+	assert.equal(first.querySelector('.cinetrakt-rating-score').style.getPropertyValue('color'), '#3b82f6');
+	assert.equal(first.querySelector('.cinetrakt-rating-votes').querySelector('span').textContent, '1.8M');
+	assert.equal(imdb.querySelector('.cinetrakt-rating-votes').querySelector('span').textContent, '275.8K');
+	assert.equal(imdb.querySelector('.cinetrakt-rating-votes').title, '275,800 votes');
+	assert.equal(first.href, 'https://letterboxd.com/film/first-film');
+	assert.equal(first.target, '_blank');
+	assert.equal(first.rel, 'noopener noreferrer');
+	assert.equal(context.updateLink(), firstGroup);
+	assert.equal(firstGroup.children.length, 2, 'repeated updates do not duplicate either card');
+	assert.equal(requests.length, 1);
+	firstData.mal = { rating: 9.32, votes: 934800, url: 'https://myanimelist.net/anime/52991' };
+	context.updateLink();
+	const mal = firstGroup.querySelector('[data-source="mal"]');
+	assert.equal(mal.querySelector('.cinetrakt-rating-score').textContent, '9.3', 'MyAnimeList is already /10 and must not be doubled');
+	assert.equal(mal.querySelector('.cinetrakt-rating-score').style.getPropertyValue('color'), '#8b5cf6');
+	assert.equal(mal.querySelector('.cinetrakt-rating-votes').querySelector('span').textContent, '934.8K');
+	assert.equal(mal.querySelector('.cinetrakt-rating-logo').src, 'chrome-extension://test/assets/ratings/mal.svg');
+	assert.equal(mal.href, 'https://myanimelist.net/anime/52991');
+	assert.equal(mal.target, '_blank');
+	assert.equal(mal.rel, 'noopener noreferrer');
+	assert.deepEqual(firstGroup.children.map(card => card.dataset.source), ['imdb', 'mal', 'letterboxd'], 'MAL goes directly after IMDb even if added after Letterboxd');
+	context.updateLink();
+	assert.equal(firstGroup.children.length, 3, 'repeated updates do not duplicate MAL');
+	enabled.traktRatingColors = false; context.updateLink();
+	assert.equal(first.querySelector('.cinetrakt-rating-score').style.getPropertyValue('color'), '');
+	assert.equal(mal.querySelector('.cinetrakt-rating-score').style.getPropertyValue('color'), '');
+	firstData.letterboxd.votes = null; context.updateLink();
+	assert.equal(first.querySelector('.cinetrakt-rating-votes').hidden, true, 'an unknown vote count is never shown as zero');
+	enabled.traktRatingColors = true;
+	location.pathname = '/movies/second';
+	assert.equal(context.updateLink(), null);
+	assert.equal(firstGroup.removed, true, 'the previous film cards are removed while loading');
+	requests[1].reply({ ok: true, ratings: { letterboxd: { rating: 2.5, url: 'https://letterboxd.com/film/second-film', votes: 0 } } });
+	const secondGroup = context.updateLink(); groups.push(secondGroup);
+	const second = secondGroup.querySelector('[data-source="letterboxd"]');
+	assert.equal(second.querySelector('.cinetrakt-rating-score').textContent, '5');
+	assert.equal(second.querySelector('.cinetrakt-rating-score').style.getPropertyValue('color'), '#eab308');
+	assert.equal(second.querySelector('.cinetrakt-rating-votes').querySelector('span').textContent, '0');
+	assert.equal(secondGroup.children.length, 1);
+	assert.equal(secondGroup.querySelector('[data-source="mal"]'), null, 'a film without MAL must not keep the previous anime card');
+	assert.equal(schedules.length, 1);
+	enabled.traktRatingsToggle = false;
+	assert.equal(context.updateLink(), null);
+	assert.equal(secondGroup.removed, true);
+	enabled.traktRatingsToggle = true; location.pathname = '/shows/test';
+	assert.equal(context.updateLink(), null);
+	assert.equal(requests.length, 3);
+	requests[2].reply({ ok: true, ratings: { imdb: firstData.imdb, letterboxd: null } });
+	const showGroup = context.updateLink();
+	assert.equal(showGroup.children.length, 1, 'series without Letterboxd keep only the available IMDb card');
+});
+
+test('Continue Watching reuses section positions across cards and only measures matching headings', () => {
+	const vm = require('node:vm'); let queries = 0; let measurements = 0; const prepared = [];
+	const heading = (text, top) => ({ textContent: text, getBoundingClientRect() {
+		measurements++; return { top, width: 200, height: 30 };
+	} });
+	const headings = [heading('Continue Watching', 100), heading('Recommended', 400),
+		{ textContent: 'Unrelated page content', getBoundingClientRect() { throw new Error('unnecessary layout measurement'); } }];
+	const cards = [200, 300, 500].map((top) => ({ getBoundingClientRect: () => ({ top }) }));
+	const context = vm.createContext({
+		window: { location: { hostname: 'app.trakt.tv' } },
+		document: { querySelectorAll() { queries++; return headings; } },
+		getCleanText: (text) => text.trim(), isContinueWatchingPage: () => false,
+		getContinueWatchingVerticalRange: () => ({}),
+		getSeasonEpisodeTextTargets: () => cards.map((element) => ({ element, text: 'S1 • E2' })),
+		getSeasonEpisodeFromText: () => ({ season: 1, episode: 2 }),
+		findContinueWatchingCardFromElement: (element) => element,
+		getSeasonEpisodeClickableTargets: (element) => [element], markSeasonEpisodeTargetsPreparing() {},
+		findEpisodeLookupContext: (element, card) => card, getBestShowLinkFromEpisodeElement: () => '/shows/test',
+		prepareSeasonEpisodeTextLinkFromShowUrl: (targets) => prepared.push(targets[0]),
+	});
+	vm.runInContext(traktStremioSource.slice(traktStremioSource.indexOf('function getVisibleSectionHeadingCandidates()'),
+		traktStremioSource.indexOf('function prepareSeasonEpisodeTextLinkFromShowUrl('))
+		+ traktStremioSource.slice(traktStremioSource.indexOf('function linkifyContinueWatchingSeasonEpisodeTexts()'),
+			traktStremioSource.indexOf('function insertContinueWatchingStremioButtonsTraktV3()')), context);
+	context.linkifyContinueWatchingSeasonEpisodeTexts();
+	assert.equal(queries, 1);
+	assert.equal(measurements, 2);
+	assert.deepEqual(prepared, cards.slice(0, 2));
+});
+
 test('user ratings retain native values through repeated conversion, updates and reset', () => {
 	const vm = require('node:vm');
 	const all = [];
@@ -181,7 +386,11 @@ test('Spotify bridge protocol loads in both communicating frames', () => {
 	const traktScripts = getContentScripts('https://app.trakt.tv/*');
 	const spotifyScripts = getContentScripts('https://open.spotify.com/embed*');
 	assert.ok(traktScripts.indexOf('spotify-protocol.js') < traktScripts.indexOf('trakt-soundtrack.js'));
+	assert.ok(traktScripts.indexOf('trakt-soundtrack-library.js') >= 0);
+	assert.ok(traktScripts.indexOf('trakt-soundtrack-library.js') < traktScripts.indexOf('trakt-soundtrack.js'));
 	assert.ok(spotifyScripts.indexOf('spotify-protocol.js') < spotifyScripts.indexOf('spotify-embed.js'));
+	assert.ok(spotifyScripts.indexOf('spotify-playback.js') >= 0);
+	assert.ok(spotifyScripts.indexOf('spotify-playback.js') < spotifyScripts.indexOf('spotify-embed.js'));
 	assert.match(traktSoundtrackSource, /if \(!cinetraktReadySpotifyEmbeds\.has\(iframe\)\) return false/);
 	assert.match(traktSoundtrackSource, /Date\.now\(\) < cinetraktSoundtrackState\.discoveryDeadline/);
 });
@@ -302,9 +511,72 @@ test('poster layout does not turn the page into a nested vertical scroll contain
 	assert.doesNotMatch(pageOverflowRule, /overflow-x:\s*hidden\s*!important/);
 });
 
-test('poster layout places native Trivia beside Sentiment without compressing either card', () => {
+test('Trivia adapts beside or below Insights, retains native sizes, and restores its original position', () => {
+	const vm = require('node:vm');
+	function element(textContent = '', isSection = false) {
+		const classes = new Set();
+		return {
+			textContent, isSection, parentNode: null, children: [], width: 480,
+			get parentElement() { return this.parentNode; },
+			get isConnected() { return Boolean(this.root || this.parentNode?.isConnected); },
+			get nextElementSibling() { return this.parentNode?.children[this.parentNode.children.indexOf(this) + 1]; },
+			classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name) },
+			contains(child) { return child === this || this.children.some((node) => node.contains(child)); },
+			closest() { return this.isSection ? this : this.parentNode?.closest(); },
+			querySelectorAll() { return this.children.flatMap((child) => [child, ...child.querySelectorAll()]); },
+			appendChild(child) { child.remove(); child.parentNode = this; this.children.push(child); return child; },
+			append(...children) { children.forEach((child) => this.appendChild(child)); },
+			getBoundingClientRect() { return { width: this.width }; },
+			insertBefore(child, anchor) { child.remove(); child.parentNode = this; this.children.splice(this.children.indexOf(anchor), 0, child); },
+			insertAdjacentElement(position, child) {
+				assert.equal(position, 'afterend');
+				const parent = this.parentNode; child.remove(); child.parentNode = parent;
+				parent.children.splice(parent.children.indexOf(this) + 1, 0, child);
+			},
+			remove() { if (this.parentNode) this.parentNode.children.splice(this.parentNode.children.indexOf(this), 1); this.parentNode = null; },
+		};
+	}
+	for (const label of ['Insights', 'Sentiment']) for (const wide of [false, true]) {
+		const main = element(); main.root = true;
+		const summary = main.appendChild(element());
+		summary.width = wide ? 1600 : 1000;
+		const contextual = summary.appendChild(element()); summary.querySelector = () => contextual;
+		const insights = contextual.appendChild(element('', true)); insights.appendChild(element(label));
+		insights.width = 320;
+		const trivia = main.appendChild(element('', true)); trivia.appendChild(element('Trivia'));
+		const state = { mainContent: main, summaryContainer: summary, sectionElements: new Set([trivia]) };
+		const context = vm.createContext({ document: { createComment: () => element(), createElement: () => element() },
+			getComputedStyle: () => ({ columnGap: '24px' }) });
+		vm.runInContext(traktPosterSource.match(/const CINETRAKT_CONTEXTUAL_PAIR_GAP = \d+;/)[0]
+			+ traktPosterSource.slice(traktPosterSource.indexOf('function moveCinetraktElementWithPlaceholder('),
+			traktPosterSource.indexOf('function attachCinetraktStickyPosterControls('))
+			+ traktPosterSource.slice(traktPosterSource.indexOf('function findCinetraktSectionByTitle('),
+				traktPosterSource.indexOf('function hasCinetraktVisibleBorderRadius(')), context);
+		context.attachCinetraktTriviaBesideSentiment(state);
+		assert.equal(insights.nextElementSibling, trivia, label);
+		assert.equal(trivia.parentNode, wide ? state.sentimentTriviaRow : contextual);
+		assert.equal(state.sectionElements.has(trivia), false);
+		context.attachCinetraktTriviaBesideSentiment(state);
+		assert.equal(contextual.children.length, wide ? 1 : 2, 'repeated updates never duplicate Trivia');
+		summary.width = 1000;
+		context.attachCinetraktTriviaBesideSentiment(state);
+		assert.equal(trivia.parentNode, contextual, 'a narrower window stacks the cards');
+		assert.equal(insights.nextElementSibling, trivia);
+		summary.width = 1600;
+		context.attachCinetraktTriviaBesideSentiment(state);
+		assert.equal(trivia.parentNode, state.sentimentTriviaRow, 'wide windows place the cards beside each other');
+		assert.equal(insights.width, 320);
+		assert.equal(trivia.width, 480);
+		context.restoreCinetraktTriviaToNativeFlow(state);
+		assert.equal(trivia.parentNode, main);
+		assert.equal(main.children.length, 2, 'restoring removes the placeholder');
+		assert.equal(state.triviaEntry, null);
+	}
+});
+
+test('poster layout places native Trivia beside Insights or legacy Sentiment without compressing either card', () => {
 	assert.match(traktPosterSource, /function attachCinetraktTriviaBesideSentiment\(state\)/);
-	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(contextualContent, \['sentiment'\]\)/);
+	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(contextualContent, \['insights', 'sentiment'\]\)/);
 	assert.match(traktPosterSource, /findCinetraktSectionByTitle\(state\.mainContent, \['trivia', 'anecdotes'\]\)/);
 	assert.match(traktPosterSource, /function canPlaceCinetraktTriviaBesideSentiment\(state, contextualContent, sentimentSection\)/);
 	assert.match(traktPosterSource, /const minimumWidth = sentimentWidth[\s\S]*?\+ \(cardWidth \* 2\)[\s\S]*?\+ CINETRAKT_CONTEXTUAL_PAIR_GAP[\s\S]*?\+ summaryGap/);
@@ -377,7 +649,7 @@ test('detail poster uses a clean Stremio interaction without the native promo ov
 	assert.doesNotMatch(traktStremioSource, /cinetrakt-sticky-poster-image/);
 });
 
-test('summary ratings keep only IMDb, open its title directly, and preserve the native arrow trigger', () => {
+test('summary ratings keep IMDb, add Letterboxd, and preserve the native arrow trigger', () => {
 	assert.match(traktRatingsSource, /querySelectorAll\('rating\[data-variant="row"\]'\)/);
 	assert.match(traktRatingsSource, /getAttribute\('viewBox'\)/);
 	assert.match(traktRatingsSource, /#f6c700/);
@@ -395,9 +667,9 @@ test('summary ratings keep only IMDb, open its title directly, and preserve the 
 	assert.match(traktRatingsSource, /document\.createElement\('span'\)/);
 	assert.match(traktRatingsSource, /row\.dataset\.cinetraktRatingsPopupRow = 'true'/);
 	assert.match(traktRatingsSource, /placementAnchor\.parentNode\.insertBefore\(row, placementAnchor\)/);
-	assert.match(traktRatingsSource, /row\.appendChild\(placementAnchor\)/);
-	assert.match(traktRatingsSource, /placementAnchor\.nextElementSibling !== popupButton/);
-	assert.match(traktRatingsSource, /placementAnchor\.insertAdjacentElement\('afterend', popupButton\)/);
+	assert.match(traktRatingsSource, /popupRow\.insertBefore\(popupButton, placementAnchor\)/);
+	assert.match(traktRatingsSource, /CineTraktSeasonChart\.updateButton\(popupButton, seasonRatings\)/);
+	assert.doesNotMatch(traktRatingsSource, /wos-grid-blue|wos-grid-green|wos-grid-pink/);
 	assert.match(traktRatingsSource, /popupButton\.dataset\.imdbId = imdbId/);
 	assert.doesNotMatch(traktRatingsSource, /setWatchOnStremioRatingsPopupRow\(placementAnchor\.parentElement\)/);
 	assert.doesNotMatch(traktRatingsSource, /function createWatchOnStremioTraktRatingsToggle/);

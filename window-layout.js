@@ -1,9 +1,6 @@
 (() => {
 	'use strict';
 
-	const IMDB_RATINGS_MIN_WIDTH = 500;
-	const IMDB_RATINGS_MIN_HEIGHT = 300;
-	const IMDB_RATINGS_SCREEN_MARGIN = 40;
 	const SOURCE_MIN_WIDTH = 900;
 	const WINDOW_SEAM_OVERLAP = 15;
 	const SNAP_EDGE_LEFT_FIX = -7;
@@ -118,50 +115,11 @@
 		};
 	}
 
-	function getImdbRatingsPopupLayout(displayBounds) {
-		const displayWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
-		const displayHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
-		const width = Math.min(1320, Math.max(1, displayWidth - IMDB_RATINGS_SCREEN_MARGIN * 2));
-		const height = Math.min(900, Math.max(1, displayHeight - IMDB_RATINGS_SCREEN_MARGIN * 2));
-		return {
-			left: Math.round(Number(displayBounds.left) || 0) + Math.floor((displayWidth - width) / 2),
-			top: Math.round(Number(displayBounds.top) || 0) + Math.floor((displayHeight - height) / 2),
-			width,
-			height,
-		};
-	}
-
-	function getResizedImdbRatingsPopupLayout(displayBounds, requestedWidth, requestedHeight) {
-		const displayWidth = Math.max(1, Math.round(Number(displayBounds.width) || 1920));
-		const displayHeight = Math.max(1, Math.round(Number(displayBounds.height) || 1080));
-		const maxWidth = Math.max(1, displayWidth - IMDB_RATINGS_SCREEN_MARGIN * 2);
-		const maxHeight = Math.max(1, displayHeight - IMDB_RATINGS_SCREEN_MARGIN * 2);
-		const width = clampNumber(
-			Math.round(Number(requestedWidth) || Math.min(IMDB_RATINGS_MIN_WIDTH, maxWidth)),
-			Math.min(IMDB_RATINGS_MIN_WIDTH, maxWidth),
-			maxWidth,
-		);
-		const height = clampNumber(
-			Math.round(Number(requestedHeight) || Math.min(IMDB_RATINGS_MIN_HEIGHT, maxHeight)),
-			Math.min(IMDB_RATINGS_MIN_HEIGHT, maxHeight),
-			maxHeight,
-		);
-
-		return {
-			left: Math.round(Number(displayBounds.left) || 0) + Math.floor((displayWidth - width) / 2),
-			top: Math.round(Number(displayBounds.top) || 0) + Math.floor((displayHeight - height) / 2),
-			width,
-			height,
-		};
-	}
-
 	const api = Object.freeze({
 		clampNumber,
 		pickBestDisplayForWindow,
 		getFallbackDisplayBounds,
 		getPopupLayout,
-		getImdbRatingsPopupLayout,
-		getResizedImdbRatingsPopupLayout,
 	});
 	globalThis.CineTraktWindowLayout = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

@@ -60,7 +60,7 @@ test('collection selection is loaded before the Trakt customization script', () 
 	assert.ok(scripts.indexOf('trakt-collection-utils.js') < scripts.indexOf('trakt-customizations.js'));
 });
 
-test('collection preloading restores the native list position and style after success, route change or timeout', () => {
+function collectionPreloadFixture({ wrapperReady = true } = {}) {
 	const fs = require('node:fs');
 	const path = require('node:path');
 	const vm = require('node:vm');
@@ -90,34 +90,112 @@ test('collection preloading restores the native list position and style after su
 	const wrapper = new Element();
 	wrapper.setAttribute('style', '--height-list: var(--height-lists-list)');
 	wrapper.closest = () => renderFor;
+	const cards = [];
+	wrapper.querySelectorAll = () => cards;
 	const timers = new Map(); let nextTimer = 0;
-	const context = vm.createContext({ document: {
-		body, querySelectorAll: () => [wrapper], createElement: () => new Element(), createComment: () => new Element(),
-	}, window: {
-		setTimeout(callback) { timers.set(++nextTimer, callback); return nextTimer; },
+	const listeners = new Map(); const observers = []; const scheduled = [];
+	const document = {
+		body, scrollingElement: { scrollTop: 0 }, querySelectorAll: () => wrapperReady ? [wrapper] : [],
+		querySelector: () => wrapperReady ? wrapper : null,
+		createElement: () => new Element(), createComment: () => new Element(),
+	};
+	const context = vm.createContext({ document, window: {
+		setTimeout(callback, delay) { timers.set(++nextTimer, { callback, delay }); return nextTimer; },
 		clearTimeout(id) { timers.delete(id); },
-	} });
+		addEventListener(type, callback) { listeners.set(type, callback); },
+		removeEventListener(type) { listeners.delete(type); },
+	}, MutationObserver: class {
+		constructor(callback) { this.callback = callback; this.connected = false; observers.push(this); }
+		observe() { this.connected = true; }
+		disconnect() { this.connected = false; }
+	}, CineTraktTraktRuntime: { schedule: (reason) => scheduled.push(reason) } });
 	const source = fs.readFileSync(path.join(__dirname, '../trakt-customizations.js'), 'utf8');
-	vm.runInContext(`let cinetraktCollectionRenderProbe = null; let cinetraktCollectionProbeAttemptedRoute = '';
+	vm.runInContext(`let cinetraktCollectionRenderProbe = null; let cinetraktCollectionProbeAttemptedRoute = ''; let cinetraktCollectionDiscoveryObserver = null;
 		${source.slice(source.indexOf('function restoreCinetraktCollectionRenderProbe()'), source.indexOf('function restoreCinetraktOfficialCollectionCard()'))}
 		globalThis.probe = { start: primeCinetraktPopularListsRendering, restore: restoreCinetraktCollectionRenderProbe };`, context);
-	context.probe.start('/movies/poltergeist-1982');
+	return { probe: context.probe, body, nativeParent, renderFor, before, after, timers, cards, listeners, observers, scheduled, document,
+		mountWrapper() { wrapperReady = true; },
+		card(loaded) { const card = { loaded, querySelector() { return this.loaded ? {} : null; } }; cards.push(card); return card; },
+		flushMutations() { for (const observer of observers) if (observer.connected) observer.callback(); },
+		advance(ms) { for (const timer of [...timers.values()]) if (timer.delay <= ms) timer.callback(); },
+	};
+}
+
+test('collection preloading restores the native list position and style after success, route change or timeout', () => {
+	const { probe, body, nativeParent, renderFor, before, after, timers, observers, listeners, advance } = collectionPreloadFixture();
+	probe.start('/movies/poltergeist-1982');
 	const hiddenProbe = body.children[1];
 	assert.equal(renderFor.parentNode, hiddenProbe);
 	assert.equal(nativeParent.children.length, 3);
-	context.probe.start('/movies/poltergeist-1982');
+	probe.start('/movies/poltergeist-1982');
 	assert.equal(body.children.length, 2);
-	context.probe.restore();
+	probe.restore();
 	assert.deepEqual(nativeParent.children, [before, renderFor, after]);
 	assert.equal(renderFor.getAttribute('style'), 'display: contents; --native-value: 1');
 	assert.equal(body.children.length, 1);
 	assert.equal(timers.size, 0);
-	context.probe.start('/movies/the-conjuring-2013');
-	context.probe.start('/movies/another-film');
+	probe.start('/movies/the-conjuring-2013');
+	probe.start('/movies/another-film');
 	assert.equal(body.children.length, 2);
 	assert.equal(timers.size, 1);
-	[...timers.values()][0]();
+	advance(8000);
 	assert.deepEqual(nativeParent.children, [before, renderFor, after]);
 	assert.equal(body.children.length, 1);
 	assert.equal(timers.size, 0);
+	assert.equal(listeners.size, 0);
+	assert.ok(observers.every((observer) => !observer.connected));
+});
+
+test('Nikita releases its popular lists immediately once cards render, even without a collection', () => {
+	const fixture = collectionPreloadFixture();
+	fixture.card(true); const deferred = fixture.card(false);
+	fixture.probe.start('/movies/nikita-1990');
+	assert.notEqual(fixture.renderFor.parentNode, fixture.nativeParent);
+	deferred.loaded = true; fixture.flushMutations();
+	assert.equal(fixture.renderFor.parentNode, fixture.nativeParent);
+	assert.equal(fixture.body.children.length, 1);
+	assert.equal(fixture.timers.size, 0);
+	assert.deepEqual(fixture.scheduled, ['collection-preload-finished']);
+	fixture.probe.start('/movies/nikita-1990');
+	assert.equal(fixture.body.children.length, 1, 'already rendered lists never need to be hidden');
+});
+
+test('scrolling restores the native list immediately instead of waiting for preloading', () => {
+	const fixture = collectionPreloadFixture(); fixture.card(false);
+	fixture.probe.start('/movies/nikita-1990');
+	fixture.listeners.get('scroll')({ type: 'scroll', target: fixture.document });
+	assert.notEqual(fixture.renderFor.parentNode, fixture.nativeParent, 'initial page layout does not cancel preloading');
+	fixture.document.scrollingElement.scrollTop = 100;
+	fixture.listeners.get('scroll')({ type: 'scroll', target: fixture.document });
+	assert.equal(fixture.renderFor.parentNode, fixture.nativeParent);
+	assert.equal(fixture.timers.size, 0);
+	assert.equal(fixture.listeners.size, 0);
+	fixture.probe.start('/movies/nikita-1990');
+	assert.equal(fixture.body.children.length, 1, 'no repeated probe without new cards');
+});
+
+test('popular lists mounting after the summary trigger a new collection update', () => {
+	const fixture = collectionPreloadFixture({ wrapperReady: false });
+	fixture.probe.start('/movies/poltergeist-1982');
+	assert.equal(fixture.body.children.length, 1);
+	assert.equal(fixture.observers.length, 1);
+	fixture.flushMutations();
+	assert.equal(fixture.scheduled.length, 0);
+	fixture.mountWrapper(); fixture.flushMutations();
+	assert.deepEqual(fixture.scheduled, ['collection-row-ready']);
+	assert.equal(fixture.observers[0].connected, false);
+	fixture.probe.start('/movies/poltergeist-1982');
+	assert.notEqual(fixture.renderFor.parentNode, fixture.nativeParent);
+});
+
+test('late native cards finish preloading without scrolling and carousel scrolls do not cancel it', () => {
+	const fixture = collectionPreloadFixture();
+	fixture.probe.start('/movies/poltergeist-1982');
+	fixture.advance(2000);
+	assert.notEqual(fixture.renderFor.parentNode, fixture.nativeParent);
+	const deferred = fixture.card(false);
+	fixture.listeners.get('scroll')({ type: 'scroll', target: fixture.renderFor });
+	assert.notEqual(fixture.renderFor.parentNode, fixture.nativeParent);
+	deferred.loaded = true; fixture.flushMutations();
+	assert.equal(fixture.renderFor.parentNode, fixture.nativeParent);
 });

@@ -45,7 +45,7 @@ body {
 }
 
 .app-brand img {
-	border-radius: 8px;
+	object-fit: contain;
 }
 
 h1,
@@ -106,8 +106,8 @@ main {
 }
 
 .feature-group {
-	--group-accent: #a63dd2;
-	--group-accent-soft: rgb(166 61 210 / 12%);
+	--group-accent: var(--cinetrakt-accent-text);
+	--group-accent-soft: color-mix(in srgb, var(--cinetrakt-accent) 12%, transparent);
 	padding-top: 7px;
 }
 
@@ -120,6 +120,7 @@ main {
 }
 
 .feature-group[data-group="trakt"] {
+	--group-control-accent: var(--cinetrakt-accent);
 	grid-column: 1 / -1;
 	grid-row: 1;
 }
@@ -189,7 +190,7 @@ main {
 
 .feature-subgroup h3 {
 	margin: 0 7px 3px;
-	color: #d8b8e6;
+	color: var(--cinetrakt-accent-focus);
 	font-size: 10px;
 	font-weight: 720;
 	letter-spacing: 0.025em;
@@ -228,7 +229,7 @@ main {
 }
 
 .feature-title:hover {
-	color: #e3c7f2;
+	color: var(--cinetrakt-accent-focus);
 }
 
 .feature-title:focus-visible {
@@ -243,9 +244,9 @@ main {
 	width: max-content;
 	max-width: min(320px, calc(100vw - 20px));
 	padding: 10px 12px;
-	border: 1px solid #61506d;
+	border: 1px solid color-mix(in srgb, var(--cinetrakt-accent-text) 35%, #2b2830);
 	border-radius: 8px;
-	background: #25202c;
+	background: color-mix(in srgb, var(--cinetrakt-accent) 8%, #19171d);
 	color: #f3edf7;
 	box-shadow: 0 6px 20px rgb(0 0 0 / 40%);
 	font-size: 12px;
@@ -294,13 +295,13 @@ main {
 }
 
 .switch input:checked + span {
-	border-color: #a63dd2;
-	background: #a63dd2;
+	border-color: var(--cinetrakt-accent);
+	background: var(--cinetrakt-accent);
 }
 
 .feature-group .switch input:checked + span {
-	border-color: var(--group-accent);
-	background: var(--group-accent);
+	border-color: var(--group-control-accent, var(--group-accent));
+	background: var(--group-control-accent, var(--group-accent));
 }
 
 .switch input:checked + span::after {
@@ -308,7 +309,7 @@ main {
 }
 
 .switch input:focus-visible + span {
-	outline: 2px solid #d79aed;
+	outline: 2px solid var(--cinetrakt-accent-focus);
 	outline-offset: 2px;
 }
 
@@ -410,12 +411,12 @@ main {
 }
 
 .button.primary {
-	background: #a63dd2;
+	background: var(--cinetrakt-accent);
 	color: #fff;
 }
 
 .button.primary:hover {
-	background: #b64add;
+	background: var(--cinetrakt-accent-hover);
 }
 
 .button.secondary {
@@ -429,7 +430,7 @@ main {
 }
 
 .button:focus-visible {
-	outline: 2px solid #d79aed;
+	outline: 2px solid var(--cinetrakt-accent-focus);
 	outline-offset: 2px;
 }
 

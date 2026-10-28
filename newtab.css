@@ -59,7 +59,7 @@ body {
 }
 
 .poster-panel:focus-visible {
-	outline: 3px solid #a63dd2;
+	outline: 3px solid var(--cinetrakt-accent);
 	outline-offset: -3px;
 }
 

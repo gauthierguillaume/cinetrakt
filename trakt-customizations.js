@@ -7,6 +7,7 @@ const CINETRAKT_COLLECTION_STYLE_ID = 'cinetrakt-official-collection-style';
 let cinetraktCollectionPlacement = null;
 let cinetraktCollectionRenderProbe = null;
 let cinetraktCollectionProbeAttemptedRoute = '';
+let cinetraktCollectionDiscoveryObserver = null;
 
 function setCinetraktReactionsHidden(enabled) {
 	if (!document.getElementById('cinetrakt-hidden-reactions-style')) {
@@ -87,8 +88,8 @@ function findCinetraktCollectionInsertionTarget() {
 }
 
 function findCinetraktPopularListsSection() {
-	return [...document.querySelectorAll('section.section-list-container, section')].find((section) => {
-		return [...section.querySelectorAll('h1, h2, h3, h4, a, button, div, span')]
+	return [...document.querySelectorAll('section.section-list-container')].find((section) => {
+		return [...section.querySelectorAll('.trakt-list-title-wrapper, h1, h2, h3, h4')]
 			.some((element) => /^(Popular Lists|Listes populaires)$/i.test(getCleanText(element.textContent)));
 	}) || null;
 }
@@ -116,8 +117,13 @@ function findCinetraktOfficialCollectionCard() {
 function restoreCinetraktCollectionRenderProbe() {
 	if (!cinetraktCollectionRenderProbe) return;
 
-	const { renderFor, placeholder, probe, timer, originalStyle } = cinetraktCollectionRenderProbe;
+	const { renderFor, placeholder, probe, timer, originalStyle, observer, onScroll } = cinetraktCollectionRenderProbe;
+	cinetraktCollectionRenderProbe = null;
 	window.clearTimeout(timer);
+	observer.disconnect();
+	window.removeEventListener('scroll', onScroll, true);
+	window.removeEventListener('wheel', onScroll, true);
+	window.removeEventListener('touchmove', onScroll, true);
 	if (renderFor) {
 		if (originalStyle == null) renderFor.removeAttribute('style');
 		else renderFor.setAttribute('style', originalStyle);
@@ -127,20 +133,39 @@ function restoreCinetraktCollectionRenderProbe() {
 	}
 	placeholder?.remove();
 	probe?.remove();
-	cinetraktCollectionRenderProbe = null;
+	globalThis.CineTraktTraktRuntime?.schedule('collection-preload-finished', 0);
 }
 
 function primeCinetraktPopularListsRendering(routeKey) {
 	if (cinetraktCollectionRenderProbe?.routeKey === routeKey) return;
-	if (cinetraktCollectionProbeAttemptedRoute === routeKey) return;
 	restoreCinetraktCollectionRenderProbe();
 
 	const listsWrapper = [...document.querySelectorAll('svelte-css-wrapper')].find((wrapper) => {
 		return wrapper.getAttribute('style')?.includes('--height-lists-list');
 	});
 	const renderFor = listsWrapper?.closest('trakt-render-for');
-	if (!renderFor?.parentNode) return;
-	cinetraktCollectionProbeAttemptedRoute = routeKey;
+	if (!renderFor?.parentNode) {
+		// The list section may mount after the summary, inside a native container
+		// already styled by CineTrakt (and therefore ignored by the shared observer).
+		if (!cinetraktCollectionDiscoveryObserver) {
+			cinetraktCollectionDiscoveryObserver = new MutationObserver(() => {
+				if (!document.querySelector('svelte-css-wrapper[style*="--height-lists-list"]')) return;
+				cinetraktCollectionDiscoveryObserver.disconnect();
+				cinetraktCollectionDiscoveryObserver = null;
+				globalThis.CineTraktTraktRuntime?.schedule('collection-row-ready', 0);
+			});
+			cinetraktCollectionDiscoveryObserver.observe(document.body, { childList: true, subtree: true });
+		}
+		return;
+	}
+	cinetraktCollectionDiscoveryObserver?.disconnect();
+	cinetraktCollectionDiscoveryObserver = null;
+	const cardSelector = '.trakt-list-item-container > svelte-css-wrapper > .trakt-card';
+	const cards = [...listsWrapper.querySelectorAll(cardSelector)];
+	if (cards.length && cards.every((card) => card.querySelector('.trakt-list-summary-card'))) return;
+	const attemptKey = `${routeKey}|${cards.length}`;
+	if (cinetraktCollectionProbeAttemptedRoute === attemptKey) return;
+	cinetraktCollectionProbeAttemptedRoute = attemptKey;
 
 	const placeholder = document.createComment('CineTrakt popular lists render position');
 	const probe = document.createElement('div');
@@ -181,11 +206,37 @@ function primeCinetraktPopularListsRendering(routeKey) {
 	renderFor.parentNode.insertBefore(placeholder, renderFor);
 	document.body.appendChild(probe);
 	probe.appendChild(renderFor);
-	const timer = window.setTimeout(() => restoreCinetraktCollectionRenderProbe(), 15000);
-	cinetraktCollectionRenderProbe = { routeKey, renderFor, placeholder, probe, timer, originalStyle };
+	const initialScrollTop = document.scrollingElement?.scrollTop || 0;
+	const onScroll = (event) => {
+		// Carousel initialization emits scroll events too. Only a page scroll or
+		// the user's scrolling gesture should interrupt background preloading.
+		if (event?.type === 'scroll' && event.target !== document) return;
+		if (event?.type === 'scroll'
+			&& (document.scrollingElement?.scrollTop || 0) === initialScrollTop) return;
+		restoreCinetraktCollectionRenderProbe();
+	};
+	const observer = new MutationObserver(() => {
+		if (cinetraktCollectionRenderProbe?.probe !== probe) return;
+		const renderedCards = [...listsWrapper.querySelectorAll(cardSelector)];
+		if (renderedCards.length && renderedCards.every((card) => card.querySelector('.trakt-list-summary-card'))) {
+			restoreCinetraktCollectionRenderProbe();
+		}
+	});
+	// No collection is a normal result. Release the native row as soon as its cards
+	// are rendered, and always before waiting could interfere with page scrolling.
+	// The section itself can arrive after the other page data. Give it time to
+	// mount, without withholding the row when the user starts scrolling.
+	const timer = window.setTimeout(onScroll, 8000);
+	cinetraktCollectionRenderProbe = { routeKey, renderFor, placeholder, probe, timer, originalStyle, observer, onScroll };
+	observer.observe(renderFor, { childList: true, subtree: true });
+	window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+	window.addEventListener('wheel', onScroll, { capture: true, passive: true });
+	window.addEventListener('touchmove', onScroll, { capture: true, passive: true });
 }
 
 function restoreCinetraktOfficialCollectionCard() {
+	cinetraktCollectionDiscoveryObserver?.disconnect();
+	cinetraktCollectionDiscoveryObserver = null;
 	restoreCinetraktCollectionRenderProbe();
 	if (!cinetraktCollectionPlacement) return;
 
@@ -362,8 +413,8 @@ function hideCinetraktUnusedTraktNavigationEntries() {
 		},
 		{
 			boundary: content,
-			matches: (labels, href) => labels.some((label) => label === 'collaborations')
-				|| /(^|\/)collaborations(?:\/|\?|#|$)/i.test(href),
+			matches: (labels, href) => labels.some((label) => ['shared', 'collaborations'].includes(label))
+				|| /(^|\/)(?:shared|collaborations)(?:\/|\?|#|$)/i.test(href),
 		},
 	];
 

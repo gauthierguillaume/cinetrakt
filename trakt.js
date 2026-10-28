@@ -18,6 +18,7 @@
 	async function updateFeatures() {
 		await globalThis.CineTraktSettings?.ready;
 		if (window.location.hostname !== 'app.trakt.tv') return;
+		globalThis.CineTraktImdbPanel?.sync(isFeatureEnabled('imdbEpisodeRatingsPopup'));
 		const pageRelevant = stremioUi.isPageRelevant();
 
 		/* L'ouverture Stremio est la fonction principale : elle est initialisée
@@ -26,6 +27,7 @@
 		if (pageRelevant && isFeatureEnabled('traktStremioLinks')) stremioUi.update();
 
 		posterLayout.setEnabled(isFeatureEnabled('traktPosterLayout') && isDetailPage());
+		globalThis.CineTraktTraktFanart?.update(isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		if (isFeatureEnabled('traktSoundtrack')) soundtrack.update();
 		else soundtrack.cleanup({ pause: false });
 
@@ -68,6 +70,8 @@
 		document.removeEventListener('pointerover', notifyPointerReturn);
 		soundtrack.cleanup({ pause: isFeatureEnabled('traktSoundtrack') });
 		posterLayout.cleanup();
+		globalThis.CineTraktTraktFanart?.cleanup();
+		globalThis.CineTraktImdbPanel?.cleanup();
 	}, { once: true });
 
 	globalThis.CineTraktTraktRuntime?.start(updateFeatures);

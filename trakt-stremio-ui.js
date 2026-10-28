@@ -475,7 +475,7 @@ function injectWatchOnStremioEpisodeLinkStyles() {
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:hover,
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}:focus-visible,
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} {
-			color: #a855f7 !important;
+			color: var(--cinetrakt-accent-text) !important;
 			text-decoration: none !important;
 			text-decoration-line: none !important;
 			text-decoration-color: transparent !important;
@@ -490,7 +490,7 @@ function injectWatchOnStremioEpisodeLinkStyles() {
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} .trakt-card-title,
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} .trakt-card-subtitle,
 		.${WATCH_ON_STREMIO_EPISODE_LINK_CLASS}.${WATCH_ON_STREMIO_EPISODE_LINK_GROUP_ACTIVE_CLASS} trakt-spoiler {
-			color: #a855f7 !important;
+			color: var(--cinetrakt-accent-text) !important;
 		}
 	`;
 	document.documentElement.appendChild(style);
@@ -971,6 +971,7 @@ function getVisibleSectionHeadingCandidates() {
 	const sectionTitles = /^(Continue Watching|Start Watching|Calendar|Trending|Recommended|Anticipated|Popular|Recently Watched|Up Next)$/i;
 
 	return [...document.querySelectorAll("h1, h2, h3, h4, button, a, div, span")]
+		.filter((element) => sectionTitles.test(getCleanText(element.textContent)))
 		.map((element) => {
 			const text = getCleanText(element.textContent);
 			const rect = element.getBoundingClientRect();
@@ -987,23 +988,23 @@ function getVisibleSectionHeadingCandidates() {
 		.sort((a, b) => a.rect.top - b.rect.top);
 }
 
-function getNearestSectionTitleAboveCard(card) {
+function getNearestSectionTitleAboveCard(card, sectionHeadings) {
 	if (!card) return "";
 
 	const cardRect = card.getBoundingClientRect();
-	const headings = getVisibleSectionHeadingCandidates()
+	const headings = sectionHeadings
 		.filter((item) => item.rect.top < cardRect.top + 10)
 		.sort((a, b) => b.rect.top - a.rect.top);
 
 	return headings[0]?.text || "";
 }
 
-function isCardInContinueWatchingArea(card) {
+function isCardInContinueWatchingArea(card, sectionHeadings) {
 	if (!card) return false;
 
 	if (isContinueWatchingPage()) return true;
 
-	const nearestSectionTitle = getNearestSectionTitleAboveCard(card);
+	const nearestSectionTitle = getNearestSectionTitleAboveCard(card, sectionHeadings);
 
 	return /^Continue Watching$/i.test(nearestSectionTitle);
 }
@@ -1045,6 +1046,9 @@ function prepareSeasonEpisodeTextLinkFromShowUrl(elements, episodeData, showUrl,
 function linkifyContinueWatchingSeasonEpisodeTexts() {
 	if (window.location.hostname !== "app.trakt.tv") return;
 	if (!isContinueWatchingPage() && !getContinueWatchingVerticalRange()) return;
+	// Share heading measurements across all cards in this update. On the progress
+	// page every card is relevant, so no heading measurements are needed at all.
+	const sectionHeadings = isContinueWatchingPage() ? [] : getVisibleSectionHeadingCandidates();
 
 	getSeasonEpisodeTextTargets().forEach(({ element, text }) => {
 		const episodeData = getSeasonEpisodeFromText(text);
@@ -1054,7 +1058,7 @@ function linkifyContinueWatchingSeasonEpisodeTexts() {
 		const initialTargets = getSeasonEpisodeClickableTargets(element, initialContext);
 		markSeasonEpisodeTargetsPreparing(initialTargets, episodeData);
 		const context = findEpisodeLookupContext(element, initialContext);
-		if (!context || !isCardInContinueWatchingArea(context)) return;
+		if (!context || !isCardInContinueWatchingArea(context, sectionHeadings)) return;
 
 		const showUrl = getBestShowLinkFromEpisodeElement(element, context);
 

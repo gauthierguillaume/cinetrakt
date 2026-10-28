@@ -24,8 +24,6 @@
 	const STREAM_CARDS_CLASS = 'wos-stremio-source-cards';
 	const THEME_CLASS = 'wos-stremio-trakt-theme';
 	const POINTER_OVER_CLASS = 'wos-stream-pointer-over';
-	const TITLE_HIGHLIGHT = 'cinetrakt-stream-title';
-	const SIZE_HIGHLIGHT = 'cinetrakt-stream-size';
 	const DISCOVERY_RETRY_DELAYS = Object.freeze([80, 160, 320, 640, 1200, 2400, 4000]);
 
 	let lastPanel = null;
@@ -146,16 +144,16 @@
 				padding: 8px 6px !important;
 				gap: 6px !important;
 				align-items: stretch !important;
-				border: 1px solid rgba(201, 183, 239, 0.13) !important;
+				border: 1px solid color-mix(in srgb, var(--cinetrakt-accent-text) 13%, transparent) !important;
 				border-radius: 10px !important;
-				background: rgba(201, 183, 239, 0.045) !important;
+				background: color-mix(in srgb, var(--cinetrakt-accent-text) 4.5%, transparent) !important;
 				transition: background-color 120ms ease, border-color 120ms ease;
 			}
 
 			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"].${POINTER_OVER_CLASS},
 			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:focus-visible {
-				background: rgba(168, 85, 247, 0.12) !important;
-				border-color: rgba(192, 132, 252, 0.55) !important;
+				background: color-mix(in srgb, var(--cinetrakt-accent) 12%, transparent) !important;
+				border-color: color-mix(in srgb, var(--cinetrakt-accent-text) 55%, transparent) !important;
 			}
 
 			html.${ACTIVE_CLASS}.${STREAM_CARDS_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="info-container-"] {
@@ -166,7 +164,7 @@
 				max-width: 34% !important;
 				min-width: 0 !important;
 				padding-right: 4px !important;
-				border-right: 1px solid rgba(201, 183, 239, 0.16) !important;
+				border-right: 1px solid color-mix(in srgb, var(--cinetrakt-accent-text) 16%, transparent) !important;
 				overflow: visible !important;
 			}
 
@@ -208,21 +206,13 @@
 
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"].${POINTER_OVER_CLASS},
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"]:focus-visible {
-				background: color-mix(in srgb, oklch(35.5% .1394 314.2) 40%, color-mix(in srgb, oklch(19.5% .009 300) 97%, oklch(29% .1128 314.2))) !important;
-				outline-color: oklch(56.1% .205 314.2) !important;
+				background: color-mix(in srgb, var(--cinetrakt-accent-muted) 40%, color-mix(in srgb, oklch(19.5% .009 300) 97%, var(--cinetrakt-accent-deep))) !important;
+				outline-color: var(--cinetrakt-accent) !important;
 			}
 
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] [class*="addon-name-"],
 			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} a[class*="stream-container-"] > [class*="description-container-"] {
 				line-height: 1.5 !important;
-			}
-
-			html.${ACTIVE_CLASS}.${THEME_CLASS} ::highlight(${TITLE_HIGHLIGHT}) {
-				color: #a855f7;
-			}
-
-			html.${ACTIVE_CLASS}.${THEME_CLASS} ::highlight(${SIZE_HIGHLIGHT}) {
-				color: #f2cc60;
 			}
 
 			@media (prefers-reduced-motion: reduce) {
@@ -273,12 +263,12 @@
 				justify-content: flex-start; align-items: center; text-align: left; gap: 5px 7px;
 			}
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-title { font-size: 1.18em; }
-			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} .wos-stream-title { color: #a855f7; }
+			html.${ACTIVE_CLASS}.${THEME_CLASS} .${ROOT_CLASS} .wos-stream-title { color: var(--cinetrakt-accent-text); }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} :is(.wos-stream-heading-details, .wos-stream-technical-details) {
 				flex: 1; display: flex; flex-direction: column; justify-content: center;
 				gap: 6px; padding: 7px 0; min-width: 0; min-height: min-content; overflow: visible;
 			}
-			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-technical-details { border-top: 1px solid rgba(192,132,252,.16); }
+			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-technical-details { border-top: 1px solid color-mix(in srgb, var(--cinetrakt-accent-text) 16%, transparent); }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-provider-row > span { flex: 1; min-width: 0; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} img.wos-stream-provider-logo { width: 20px !important; height: 20px !important; flex: 0 0 20px; object-fit: contain; }
 			html.${ACTIVE_CLASS} .${ROOT_CLASS} .wos-stream-file-size {
@@ -311,7 +301,6 @@
 		document.documentElement.classList.remove(NO_PLAY_CLASS);
 		document.documentElement.classList.remove(STREAM_CARDS_CLASS);
 		document.documentElement.classList.remove(THEME_CLASS);
-		clearStreamHighlights();
 		globalThis.CineTraktStreamBadges.clearAll();
 
 		if (resetTracking) {
@@ -402,60 +391,11 @@
 		}, { passive: true });
 	}
 
-	function clearStreamHighlights() {
-		globalThis.CSS?.highlights?.delete(TITLE_HIGHLIGHT);
-		globalThis.CSS?.highlights?.delete(SIZE_HIGHLIGHT);
-	}
-
-	function getTextRange(element, offsets) {
-		if (!element || offsets.end <= offsets.start) return null;
-		const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-		const range = document.createRange();
-		let position = 0;
-		let started = false;
-		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-			const end = position + node.textContent.length;
-			if (!started && offsets.start < end) {
-				range.setStart(node, offsets.start - position);
-				started = true;
-			}
-			if (started && offsets.end <= end) {
-				range.setEnd(node, offsets.end - position);
-				return range;
-			}
-			position = end;
-		}
-		return null;
-	}
-
-	function applyStreamHighlights(panelRoot) {
-		if (!globalThis.CineTraktSettings.isEnabled('stremioStreamAppearance')) {
-			clearStreamHighlights();
-			return;
-		}
-		if (!globalThis.CSS?.highlights || typeof Highlight !== 'function') return;
-		const titles = [];
-		const sizes = [];
-		const formatting = globalThis.CineTraktStreamFormatting;
-		panelRoot.querySelectorAll('a[class*="stream-container-"]').forEach((card) => {
-			const info = card.querySelector('[class*="addon-name-"]');
-			const description = card.querySelector('[class*="description-container-"]');
-			const fileSizes = formatting.getFileSizeRanges(info?.textContent);
-			// Metadata addons (IMDb, BasedOn, etc.) are not stream titles.
-			if (!card.hasAttribute('download') && fileSizes.length === 0) return;
-			const title = getTextRange(description, formatting.getTitleRange(description?.textContent));
-			if (title) titles.push(title);
-			fileSizes.forEach((offsets) => {
-				const size = getTextRange(info, offsets);
-				if (size) sizes.push(size);
-			});
-		});
-		// Native text nodes and links stay intact, including their tooltip and events.
-		CSS.highlights.set(TITLE_HIGHLIGHT, new Highlight(...titles));
-		CSS.highlights.set(SIZE_HIGHLIGHT, new Highlight(...sizes));
-	}
-
 	function applyPanel() {
+		if (!globalThis.CineTraktSettings.isEnabled('stremioCompactPanel')) {
+			clearPanelState({ resetTracking: true });
+			return false;
+		}
 		if (!isDetailRoute()) {
 			clearPanelState({ resetTracking: true });
 			return false;
@@ -489,7 +429,6 @@
 		document.documentElement.classList.toggle(STREAM_CARDS_CLASS, enhancedAppearance);
 		document.documentElement.classList.toggle(THEME_CLASS, enhancedAppearance);
 		globalThis.CineTraktStreamBadges.apply(panelRoot, enhancedAppearance);
-		applyStreamHighlights(panelRoot);
 		trackPanelScroll(panelRoot);
 
 		if (shouldResetScroll) {
@@ -528,7 +467,7 @@
 			if (applyPanel()) {
 				clearDiscoveryRetry();
 				retryIndex = 0;
-			} else if (isDetailRoute()) {
+			} else if (globalThis.CineTraktSettings.isEnabled('stremioCompactPanel') && isDetailRoute()) {
 				scheduleDiscoveryRetry();
 			}
 		});
@@ -591,19 +530,40 @@
 		globalThis.navigation?.addEventListener('currententrychange', handleRouteChange);
 
 		window.addEventListener('resize', scheduleApply, { passive: true });
-		globalThis.CineTraktSettings.onChange(scheduleApply);
-		window.addEventListener('pagehide', () => {
+		const stop = () => {
 			stopPointerTracking();
 			observer.disconnect();
+			window.removeEventListener('hashchange', handleRouteChange);
+			window.removeEventListener('popstate', handleRouteChange);
+			globalThis.navigation?.removeEventListener('currententrychange', handleRouteChange);
+			window.removeEventListener('resize', scheduleApply);
 			clearDiscoveryRetry();
 			if (animationFrame !== null) cancelAnimationFrame(animationFrame);
-		}, { once: true });
+			animationFrame = null;
+			scheduled = false;
+		};
 
 		scheduleApply();
+		return stop;
 	}
 
 	globalThis.CineTraktSettings.ready.then(() => {
-		if (!globalThis.CineTraktSettings.isEnabled('stremioCompactPanel')) return;
-		start();
+		let stopPanel = null;
+		const syncSettings = () => {
+			if (globalThis.CineTraktSettings.isEnabled('stremioCompactPanel')) {
+				if (!stopPanel) stopPanel = start();
+				else scheduleApply();
+			} else if (stopPanel) {
+				stopPanel();
+				stopPanel = null;
+				clearPanelState({ resetTracking: true });
+			}
+		};
+		const unsubscribe = globalThis.CineTraktSettings.onChange(syncSettings);
+		window.addEventListener('pagehide', () => {
+			stopPanel?.();
+			if (typeof unsubscribe === 'function') unsubscribe();
+		}, { once: true });
+		syncSettings();
 	});
 })();

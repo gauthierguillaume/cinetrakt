@@ -1,11 +1,11 @@
 (() => {
 	'use strict';
 
-	function isRatingsPopupMode(locationLike = globalThis.location) {
-		return new URLSearchParams(locationLike?.search || '').get('cinetrakt_ratings_popup') === '1';
+	function isRatingsDataMode(locationLike = globalThis.location) {
+		return new URLSearchParams(locationLike?.search || '').get('cinetrakt_ratings_data') === '1';
 	}
 
-	globalThis.CineTraktImdbPage = Object.freeze({ isRatingsPopupMode });
+	globalThis.CineTraktImdbPage = Object.freeze({ isRatingsDataMode });
 
 	if (typeof module !== 'undefined' && module.exports) {
 		module.exports = globalThis.CineTraktImdbPage;

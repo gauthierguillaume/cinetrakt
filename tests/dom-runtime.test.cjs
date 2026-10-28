@@ -24,6 +24,7 @@ function createEnvironment() {
 	const documentEvents = createEventTarget();
 	const timers = new Map();
 	let nextTimerId = 1;
+	let currentTime = 0;
 	let mutationHandler = null;
 	let observerDisconnected = false;
 	let settingsListener = null;
@@ -49,10 +50,10 @@ function createEnvironment() {
 			visibilityState: 'visible',
 		},
 		MutationObserver,
-		setTimeout(callback) {
+		setTimeout(callback, delay = 0) {
 			const id = nextTimerId;
 			nextTimerId += 1;
-			timers.set(id, callback);
+			timers.set(id, { callback, at: currentTime + delay });
 			return id;
 		},
 		clearTimeout(id) {
@@ -77,11 +78,17 @@ function createEnvironment() {
 			settingsListener();
 		},
 		async runNextTimer() {
-			const next = timers.entries().next().value;
+			const next = [...timers.entries()].sort((a, b) => a[1].at - b[1].at)[0];
 			assert.ok(next, 'a scheduled update was expected');
-			const [id, callback] = next;
+			const [id, { callback, at }] = next;
 			timers.delete(id);
+			currentTime = at;
 			await callback();
+		},
+		async advance(ms) {
+			const until = currentTime + ms;
+			while ([...timers.values()].some(({ at }) => at <= until)) await this.runNextTimer();
+			currentTime = until;
 		},
 		get timerCount() {
 			return timers.size;
@@ -133,4 +140,37 @@ test('shared DOM runtime ignores owned mutations and reacts to native or route c
 	harness.environment.dispatch('pagehide');
 	assert.equal(harness.observerDisconnected, true);
 	assert.equal(harness.settingsUnsubscribed, true);
+});
+
+test('continuous page mutations cannot postpone an update beyond one second', async () => {
+	const harness = createEnvironment();
+	let updates = 0;
+	const runtime = createRuntime({ environment: harness.environment, mutationDelay: 180, ownedMarker: /^cinetrakt/ });
+	runtime.start(() => { updates++; });
+	await harness.runNextTimer();
+	for (let index = 0; index < 20; index++) {
+		harness.mutate([{ target: element('native-card'), addedNodes: [], removedNodes: [] }]);
+		await harness.advance(100);
+	}
+	assert.equal(updates, 3, 'initial update and one bounded update per second');
+	assert.equal(harness.timerCount, 0);
+	runtime.stop();
+});
+
+test('native mutations do not delay an immediate settings update and stop cancels all work', async () => {
+	const harness = createEnvironment(); const updates = [];
+	const runtime = createRuntime({ environment: harness.environment, ownedMarker: /^cinetrakt/, subscribeToSettings: true });
+	runtime.start((context) => updates.push(context));
+	await harness.runNextTimer();
+	harness.notifySettings();
+	harness.mutate([{ target: element('native-card'), addedNodes: [], removedNodes: [] }]);
+	await harness.advance(0);
+	assert.equal(updates.length, 2);
+	assert.ok(updates[1].reasons.includes('settings-change'));
+	harness.mutate([{ target: element('native-card'), addedNodes: [], removedNodes: [] }]);
+	assert.equal(harness.timerCount, 2);
+	runtime.stop();
+	assert.equal(harness.timerCount, 0);
+	runtime.schedule('late-completion', 0);
+	assert.equal(harness.timerCount, 0);
 });
