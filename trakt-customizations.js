@@ -26,54 +26,24 @@ function setCinetraktReactionsHidden(enabled) {
 
 function injectCinetraktCollectionCardStyles() {
 	if (document.getElementById(CINETRAKT_COLLECTION_STYLE_ID)) return;
-
-	const style = document.createElement('style');
-	style.id = CINETRAKT_COLLECTION_STYLE_ID;
+	const style = document.createElement('style'); style.id = CINETRAKT_COLLECTION_STYLE_ID;
 	style.textContent = `
 		#${CINETRAKT_COLLECTION_HOST_ID} {
-			box-sizing: border-box;
-			margin-top: 20px;
-			width: min(100%, var(--cinetrakt-collection-useful-width, 100%));
-			max-width: 100%;
-			min-width: 0;
-			--width-card: 100%;
-			--height-card: auto;
+			grid-column: 1 / -1; width: 100%; min-width: 0;
+			margin: 0; padding: 0; background: transparent;
 		}
-
-		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card,
-		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card > .trakt-card-content,
-		#${CINETRAKT_COLLECTION_HOST_ID} .trakt-list-summary-card {
-			box-sizing: border-box;
-			width: 100% !important;
-			max-width: 100% !important;
-			min-width: 0 !important;
+		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-body { position: relative; min-height: 260px; }
+		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-native-collection-frame {
+			display: block; position: absolute; top: 0; left: 0; z-index: 2;
+			width: 100%; height: 260px; border: 0; background: transparent; color-scheme: dark;
+			visibility: hidden;
 		}
-
-		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card,
-		#${CINETRAKT_COLLECTION_HOST_ID} > .trakt-card > .trakt-card-content {
-			height: auto !important;
+		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-frame-ready { visibility: visible; }
+		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-modal {
+			position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important;
+			z-index: 10000 !important;
 		}
-
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-title,
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-title * {
-			max-width: 100% !important;
-			white-space: nowrap !important;
-			overflow: hidden !important;
-			text-overflow: clip !important;
-			-webkit-line-clamp: unset !important;
-		}
-
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-title {
-			display: block !important;
-			min-width: 0 !important;
-			line-height: inherit !important;
-		}
-
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-title-row {
-			height: auto !important;
-			min-height: 0 !important;
-			overflow: visible !important;
-		}
+		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-fallback { color: var(--color-text-secondary); }
 	`;
 	document.head.appendChild(style);
 }
@@ -239,141 +209,42 @@ function restoreCinetraktOfficialCollectionCard() {
 	cinetraktCollectionDiscoveryObserver = null;
 	restoreCinetraktCollectionRenderProbe();
 	if (!cinetraktCollectionPlacement) return;
-
+	cinetraktCollectionPlacement.dispose?.();
 	cinetraktCollectionPlacement.host?.remove();
 	cinetraktCollectionPlacement = null;
 }
 
-function normalizeCinetraktSvgViewBoxes(root) {
-	root?.querySelectorAll('svg[viewBox]').forEach((svg) => {
-		const rawViewBox = svg.getAttribute('viewBox')?.trim() || '';
-		const exactValues = rawViewBox.split(/[\s,]+/).map(Number);
-		const hasValidViewBox = exactValues.length === 4
-			&& exactValues.every(Number.isFinite)
-			&& exactValues[2] >= 0
-			&& exactValues[3] >= 0;
-		if (hasValidViewBox) return;
-
-		const recoveredValues = rawViewBox.match(/-?(?:\d+\.?\d*|\.\d+)/g)?.map(Number) || [];
-		if (recoveredValues.length === 4
-			&& recoveredValues.every(Number.isFinite)
-			&& recoveredValues[2] >= 0
-			&& recoveredValues[3] >= 0) {
-			svg.setAttribute('viewBox', recoveredValues.join(' '));
-		} else {
-			svg.removeAttribute('viewBox');
-		}
-	});
-}
-
-function getCinetraktCollectionPosterImages(collectionCard) {
-	const seenSources = new Set();
-	return Array.from(collectionCard?.querySelectorAll('img') || []).filter((image) => {
-		const source = image.currentSrc || image.src || '';
-		const rect = image.getBoundingClientRect();
-		const looksLikePoster = /\/posters\//i.test(source)
-			|| (rect.width >= 24 && rect.height > rect.width * 1.15);
-		if (!looksLikePoster || seenSources.has(source)) return false;
-		seenSources.add(source);
-		return true;
-	}).slice(0, 8);
-}
-
-function updateCinetraktCollectionCardWidth(host, collectionCard) {
-	if (!host?.isConnected || !collectionCard?.isConnected) return;
-
-	const cardRect = collectionCard.getBoundingClientRect();
-	const posterRects = getCinetraktCollectionPosterImages(collectionCard)
-		.map((image) => image.getBoundingClientRect())
-		.filter((rect) => rect.width > 0 && rect.height > 0);
-	if (!cardRect.width || !posterRects.length) return;
-
-	const firstPosterLeft = Math.min(...posterRects.map((rect) => rect.left));
-	const lastPosterRight = Math.max(...posterRects.map((rect) => rect.right));
-	const horizontalInset = Math.max(12, firstPosterLeft - cardRect.left);
-	const posterWidth = Math.ceil(Math.max(320, lastPosterRight - cardRect.left + horizontalInset));
-	host.style.setProperty('--cinetrakt-collection-useful-width', `${posterWidth}px`);
-
-	window.requestAnimationFrame(() => {
-		if (!host.isConnected || !collectionCard.isConnected) return;
-		const compactCardWidth = collectionCard.getBoundingClientRect().width;
-		const title = collectionCard.querySelector('.cinetrakt-collection-title');
-		const titleParts = title ? [title, ...title.querySelectorAll('*')] : [];
-		const titleOverflow = Math.max(
-			0,
-			...titleParts.map((part) => part.scrollWidth - part.clientWidth),
-		);
-		const titleSafety = titleOverflow > 0 ? 2 : 0;
-		const usefulWidth = Math.ceil(Math.max(
-			posterWidth,
-			compactCardWidth + titleOverflow + titleSafety,
-		));
-		host.style.setProperty('--cinetrakt-collection-useful-width', `${usefulWidth}px`);
-	});
-}
-
-function scheduleCinetraktCollectionCardWidth(host, collectionCard) {
-	window.requestAnimationFrame(() => {
-		window.requestAnimationFrame(() => updateCinetraktCollectionCardWidth(host, collectionCard));
-	});
-}
-
-function revealCinetraktCollectionTitle(collectionCard) {
-	const textLinks = Array.from(collectionCard?.querySelectorAll('a[href]') || [])
-		.filter((link) => !link.querySelector('img') && getCleanText(link.textContent));
-	const titleLink = textLinks.find((link) => /\/lists\//i.test(link.getAttribute('href') || ''))
-		|| textLinks
-			.filter((link) => !/^@?trakt$/i.test(getCleanText(link.textContent)))
-			.sort((left, right) => getCleanText(right.textContent).length - getCleanText(left.textContent).length)[0];
-	if (!titleLink) return;
-
-	titleLink.classList.add('cinetrakt-collection-title');
-	titleLink.parentElement?.classList.add('cinetrakt-collection-title-row');
-}
-
 function placeCinetraktOfficialCollectionCard() {
 	const routeKey = window.location.pathname;
-	const isMoviePage = /^\/movies\/[^/]+\/?$/.test(routeKey);
-	if (!isMoviePage) {
-		restoreCinetraktOfficialCollectionCard();
-		cinetraktCollectionProbeAttemptedRoute = '';
-		return;
+	if (!/^\/movies\/[^/]+\/?$/.test(routeKey)) {
+		restoreCinetraktOfficialCollectionCard(); cinetraktCollectionProbeAttemptedRoute = ''; return;
 	}
-
-	if (cinetraktCollectionPlacement
-		&& (cinetraktCollectionPlacement.routeKey !== routeKey
-			|| !cinetraktCollectionPlacement.host?.isConnected)) {
-		restoreCinetraktOfficialCollectionCard();
-	}
+	if (cinetraktCollectionPlacement && (cinetraktCollectionPlacement.routeKey !== routeKey
+		|| !cinetraktCollectionPlacement.host?.isConnected)) restoreCinetraktOfficialCollectionCard();
 	if (cinetraktCollectionPlacement) return;
-
 	const insertionTarget = findCinetraktCollectionInsertionTarget();
 	const collectionCard = findCinetraktOfficialCollectionCard();
 	if (!insertionTarget) return;
-	if (!collectionCard) {
-		primeCinetraktPopularListsRendering(routeKey);
-		return;
-	}
-
+	if (!collectionCard) { primeCinetraktPopularListsRendering(routeKey); return; }
+	const titleLink = collectionCard.querySelector('.list-content > a[href]');
+	const href = globalThis.CineTraktCollectionUtils.collectionPath(titleLink?.getAttribute('href'));
+	const title = getCleanText(titleLink?.textContent);
+	if (!href || !title) return;
 	injectCinetraktCollectionCardStyles();
-	const host = document.createElement('div');
-	host.id = CINETRAKT_COLLECTION_HOST_ID;
-	host.dataset.cinetraktRoute = routeKey;
-	normalizeCinetraktSvgViewBoxes(collectionCard);
-	const collectionCardCopy = collectionCard.cloneNode(true);
-	collectionCardCopy.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
-	collectionCardCopy.querySelectorAll('img').forEach((image) => {
-		image.setAttribute('loading', 'eager');
-		// Cloned images have no Svelte load handler to finish the opacity animation.
-		image.classList.remove('image-animation-enabled');
-	});
-	normalizeCinetraktSvgViewBoxes(collectionCardCopy);
-	revealCinetraktCollectionTitle(collectionCardCopy);
+	const host = document.createElement('section'); host.id = CINETRAKT_COLLECTION_HOST_ID;
+	host.className = 'cinetrakt-collection-section'; host.dataset.cinetraktRoute = routeKey;
+	host.setAttribute('aria-label', title);
+	const body = document.createElement('div'); body.className = 'cinetrakt-collection-body';
+	host.appendChild(body);
 	restoreCinetraktCollectionRenderProbe();
-	insertionTarget.insertAdjacentElement('afterend', host);
-	host.appendChild(collectionCardCopy);
-	scheduleCinetraktCollectionCardWidth(host, collectionCardCopy);
-	cinetraktCollectionPlacement = { routeKey, host };
+	const summaryContainer = insertionTarget.closest('.trakt-summary-container');
+	// Preserve the native summary/contextual row, including Where to Watch.
+	// The collection spans the next available row, after both native columns.
+	if (summaryContainer) summaryContainer.appendChild(host);
+	else insertionTarget.insertAdjacentElement('afterend', host);
+	const state = { routeKey, host }; cinetraktCollectionPlacement = state;
+	state.dispose = globalThis.CineTraktCollectionSection.mount({ host: body, href, title, moviePath: routeKey,
+		countNode: collectionCard.querySelector('.count-item') });
 }
 
 function getCinetraktSidebarEntryWrapper(candidate, boundary) {

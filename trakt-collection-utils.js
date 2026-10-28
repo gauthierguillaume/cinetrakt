@@ -20,5 +20,71 @@
 		return paths.size === 1 ? matches[0] : null;
 	}
 
-	globalThis.CineTraktCollectionUtils = Object.freeze({ isOfficialMovieCollection, findUniqueOfficialMovieCollection });
+	function collectionPath(href) {
+		try {
+			const url = new URL(href, 'https://app.trakt.tv');
+			return ['https://app.trakt.tv', 'https://trakt.tv'].includes(url.origin)
+				&& /^\/lists\/official\/[a-z0-9]+(?:-[a-z0-9]+)*-collection(?:-\d+)?\/?$/i.test(url.pathname)
+				? url.pathname.replace(/\/$/, '') : '';
+		} catch { return ''; }
+	}
+
+	function collectionNavigation(href, event) {
+		if (!href || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return '';
+		try {
+			const url = new URL(href, 'https://app.trakt.tv');
+			if (url.origin === 'https://app.trakt.tv' && collectionPath(url.pathname)) return collectionPath(url.pathname);
+			if (url.origin === 'https://app.trakt.tv' && url.pathname === '/discover/mixtape') return url.pathname + url.search;
+			return url.origin === 'https://app.trakt.tv' && /^\/movies\/[a-z0-9][a-z0-9-]*\/?$/i.test(url.pathname)
+				? url.pathname + url.search + url.hash : '';
+		} catch { return ''; }
+	}
+
+	function createCollectionLoader({ fetch: request, apiKey }) {
+		let pending;
+		return function load(pathname, href) {
+			const path = collectionPath(href);
+			if (!/^\/movies\/[a-z0-9][a-z0-9-]*\/?$/i.test(pathname || '') || !path) return Promise.resolve(null);
+			if (pending) return pending;
+			pending = (async () => {
+				const controller = new AbortController();
+				const timer = setTimeout(() => controller.abort(), 12000);
+				async function pages(url) {
+					const result = [];
+					for (let page = 1; page <= 20; page++) {
+						const response = await request(`https://api.trakt.tv${url}&limit=100&page=${page}`, {
+							credentials: 'omit', signal: controller.signal,
+							headers: { 'trakt-api-key': apiKey, 'trakt-api-version': '2' },
+						});
+						if (!response.ok) throw Error('Collection unavailable');
+						const rows = await response.json();
+						if (!Array.isArray(rows)) throw Error('Invalid collection');
+						result.push(...rows);
+						const total = Number(response.headers.get('x-pagination-page-count'));
+						if (total > 0 ? page >= total : rows.length < 100) return result;
+					}
+					throw Error('Collection pagination exceeded');
+				}
+				try {
+					const lists = await pages(`${pathname.replace(/\/$/, '')}/lists/official/popular?extended=images`);
+					const list = lists.find(value => `/lists/official/${value.ids?.slug}` === path && isOfficialMovieCollection({
+						href: path, title: value.name, variant: value.type, owner: value.user?.username,
+					}) && Number.isSafeInteger(value.ids?.trakt) && value.ids.trakt > 0);
+					if (!list) return null;
+					const entries = await pages(`/lists/${list.ids.trakt}/items/movies?extended=full,images,colors&sort_by=rank&sort_how=asc`);
+					const seen = new Set();
+					return entries.sort((a, b) => (a?.rank || 0) - (b?.rank || 0)).flatMap(item => {
+						const movie = item?.type === 'movie' && item.movie;
+						if (!Number.isSafeInteger(movie?.ids?.trakt) || movie.ids.trakt <= 0 || seen.has(movie.ids.trakt)) return [];
+						seen.add(movie.ids.trakt); return [movie];
+					});
+				} catch { return null; } finally { clearTimeout(timer); }
+			})();
+			return pending;
+		};
+	}
+
+	const api = Object.freeze({ isOfficialMovieCollection, findUniqueOfficialMovieCollection, collectionPath, collectionNavigation, createCollectionLoader });
+	globalThis.CineTraktCollectionUtils = api;
+	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

@@ -12,6 +12,13 @@
   "content_scripts": [
     {
       "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN",
+      "js": ["trakt-collection-utils.js", "trakt-collection-native.js"],
+      "matches": ["https://app.trakt.tv/movies/*"]
+    },
+    {
+      "run_at": "document_start",
       "css": [
         "theme.css",
         "trakt-early.css"
@@ -24,6 +31,12 @@
       "matches": [
         "https://app.trakt.tv/*"
       ]
+    },
+    {
+      "run_at": "document_start",
+      "all_frames": true,
+      "css": ["trakt-posters.css"],
+      "matches": ["https://app.trakt.tv/*"]
     },
     {
       "run_at": "document_idle",
@@ -69,6 +82,7 @@
         "trakt-soundtrack-library.js",
         "trakt-soundtrack.js",
         "trakt-collection-utils.js",
+        "trakt-collection-section.js",
         "trakt-customizations.js",
         "trakt.js"
       ],

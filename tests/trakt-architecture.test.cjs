@@ -727,27 +727,24 @@ test('Stremio resets stream scroll only when the route changes', () => {
 	assert.match(stremioSource, /const DISCOVERY_RETRY_DELAYS = Object\.freeze/);
 });
 
-test('collection cards normalize malformed SVG viewBox values before cloning', () => {
-	const normalizeIndex = traktCustomizationsSource.indexOf('normalizeCinetraktSvgViewBoxes(collectionCard);');
-	const cloneIndex = traktCustomizationsSource.indexOf('collectionCard.cloneNode(true)');
-	assert.ok(normalizeIndex >= 0);
-	assert.ok(cloneIndex > normalizeIndex);
-	assert.match(traktCustomizationsSource, /svg\.removeAttribute\('viewBox'\)/);
-	assert.match(traktCustomizationsSource, /getCinetraktCollectionPosterImages/);
-	assert.match(traktCustomizationsSource, /\.slice\(0, 8\)/);
-	assert.match(traktCustomizationsSource, /--cinetrakt-collection-useful-width/);
-	assert.match(traktCustomizationsSource, /requestAnimationFrame/);
+test('the added collection follows the native summary row without displacing contextual information', () => {
+	assert.match(traktCustomizationsSource, /document.createElement\('section'\)/);
+	assert.match(traktCustomizationsSource, /summaryContainer\.appendChild\(host\)/);
+	assert.match(traktCustomizationsSource, /grid-column: 1 \/ -1/);
+	const collectionStyles = traktCustomizationsSource.slice(traktCustomizationsSource.indexOf('function injectCinetraktCollectionCardStyles'), traktCustomizationsSource.indexOf('function findCinetraktCollectionInsertionTarget'));
+	assert.doesNotMatch(collectionStyles, /grid-template-columns:|grid-row:/);
+	assert.match(traktCustomizationsSource, /CineTraktCollectionSection.mount/);
+	assert.doesNotMatch(traktCustomizationsSource, /cloneNode|readCollectionWatched|cinetrakt-collection-watched|GET_COLLECTION_ITEMS/);
 });
 
-test('collection cards widen to keep their full titles on one line', () => {
-	assert.match(traktCustomizationsSource, /function revealCinetraktCollectionTitle\(collectionCard\)/);
-	assert.match(traktCustomizationsSource, /titleLink\.classList\.add\('cinetrakt-collection-title'\)/);
-	assert.match(traktCustomizationsSource, /revealCinetraktCollectionTitle\(collectionCardCopy\)/);
-	assert.match(traktCustomizationsSource, /\.cinetrakt-collection-title,[\s\S]*?white-space:\s*nowrap\s*!important/);
-	assert.match(traktCustomizationsSource, /\.cinetrakt-collection-title,[\s\S]*?text-overflow:\s*clip\s*!important/);
-	assert.match(traktCustomizationsSource, /-webkit-line-clamp:\s*unset\s*!important/);
-	assert.match(traktCustomizationsSource, /--cinetrakt-collection-useful-width', `\$\{posterWidth\}px`/);
-	assert.match(traktCustomizationsSource, /\[title, \.\.\.title\.querySelectorAll\('\*'\)\]/);
-	assert.match(traktCustomizationsSource, /part\.scrollWidth - part\.clientWidth/);
-	assert.match(traktCustomizationsSource, /compactCardWidth \+ titleOverflow \+ titleSafety/);
+test('native collection documents keep their own handlers without running extension features recursively', () => {
+	const manifest = require('../manifest.json');
+	const scripts = manifest.content_scripts.find(entry => entry.run_at === 'document_end' && entry.matches.includes('https://app.trakt.tv/*'));
+	assert.equal(scripts.all_frames, undefined);
+	assert.ok(scripts.js.indexOf('trakt-collection-section.js') < scripts.js.indexOf('trakt-customizations.js'));
+	const nativeSource = fs.readFileSync(require.resolve('../trakt-collection-section.js'), 'utf8');
+	assert.doesNotMatch(nativeSource, /cloneNode|innerHTML|indexedDB\.(?:open|databases)|fetch\(|localStorage|sessionStorage/);
+	assert.match(nativeSource, /frame.contentDocument/);
+	assert.match(nativeSource, /observer\?\.disconnect\(\)/);
+	assert.match(nativeSource, /resizeObserver\?\.disconnect\(\)/);
 });
