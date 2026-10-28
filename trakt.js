@@ -19,6 +19,10 @@
 		await globalThis.CineTraktSettings?.ready;
 		if (window.location.hostname !== 'app.trakt.tv') return;
 		globalThis.CineTraktImdbPanel?.sync(isFeatureEnabled('imdbEpisodeRatingsPopup'));
+		ratings.setControlsEnabled({
+			toggleEnabled: isFeatureEnabled('traktRatingsToggle'),
+			popupEnabled: isFeatureEnabled('imdbEpisodeRatingsPopup'),
+		});
 		const pageRelevant = stremioUi.isPageRelevant();
 
 		/* L'ouverture Stremio est la fonction principale : elle est initialisée
@@ -26,8 +30,8 @@
 		   puisse jamais désactiver les pochettes ou les titres d'épisodes. */
 		if (pageRelevant && isFeatureEnabled('traktStremioLinks')) stremioUi.update();
 
-		posterLayout.setEnabled(isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		globalThis.CineTraktTraktFanart?.update(isFeatureEnabled('traktPosterLayout') && isDetailPage());
+		posterLayout.setEnabled(isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		if (isFeatureEnabled('traktSoundtrack')) soundtrack.update();
 		else soundtrack.cleanup({ pause: false });
 
@@ -38,11 +42,6 @@
 		});
 
 		ratings.setColorsEnabled(isFeatureEnabled('traktRatingColors'));
-		if (!pageRelevant) return;
-		ratings.setControlsEnabled({
-			toggleEnabled: isFeatureEnabled('traktRatingsToggle'),
-			popupEnabled: isFeatureEnabled('imdbEpisodeRatingsPopup'),
-		});
 	}
 
 	if (window.location.hostname !== 'app.trakt.tv') return;

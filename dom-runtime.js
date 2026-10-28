@@ -35,6 +35,7 @@
 		name = 'page',
 		observeBody = false,
 		subscribeToSettings = false,
+		immediateMutationSelector = '',
 	} = {}) {
 		if (!(ownedMarker instanceof RegExp)) throw new TypeError('ownedMarker must be a RegExp');
 
@@ -112,7 +113,17 @@
 		function handleMutations(mutations) {
 			const routeChanged = getRouteKey(environment.location) !== lastProcessedRouteKey;
 			if (routeChanged || mutations.some((mutation) => !isOwnedMutation(mutation, ownedMarker, nativeContainerSelector))) {
-				schedule(routeChanged ? 'route-dom-update' : 'dom-update', routeChanged ? 0 : mutationDelay);
+				const firstRender = immediateMutationSelector && mutations.some(mutation =>
+					Array.from(mutation.addedNodes || []).some(node => node.nodeType === 1
+						&& (node.matches?.(immediateMutationSelector) || node.querySelector?.(immediateMutationSelector))));
+				if (firstRender) {
+					// The observer runs before paint. Preparing a newly inserted
+					// summary here avoids painting its native layout for one frame.
+					pendingReasons.add('first-render');
+					void flush();
+				} else {
+					schedule(routeChanged ? 'route-dom-update' : 'dom-update', routeChanged ? 0 : mutationDelay);
+				}
 			}
 		}
 

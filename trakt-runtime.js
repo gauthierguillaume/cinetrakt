@@ -11,6 +11,7 @@
 		return runtimeApi.createRuntime({
 			environment,
 			mutationDelay: 180,
+			immediateMutationSelector: '.trakt-summary-container, .trakt-summary-poster-container, .trakt-summary-ratings',
 			ownedMarker: OWNED_MARKER,
 			nativeContainerSelector: NATIVE_CONTAINERS,
 			name: 'Trakt',

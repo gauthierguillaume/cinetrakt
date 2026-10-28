@@ -17,8 +17,8 @@ const stremioSource = read('stremio.js');
 
 function externalRatingsRetryFixture() {
 	const vm = require('node:vm'); const requests = []; const reasons = []; const timers = new Map(); let now = 1000; let nextId = 0;
-	const location = { pathname: '/movies/first' };
-	const context = vm.createContext({ window: { location }, Date: { now: () => now },
+	const location = { pathname: '/movies/first', hostname: 'app.trakt.tv' };
+	const context = vm.createContext({ window: { location }, document: { querySelector: () => null }, Date: { now: () => now },
 		CineTraktSettings: { isEnabled: () => true }, CineTraktRatingUtils: {}, CineTraktTraktStremioUi: {},
 		CineTraktExtensionProtocol: { MESSAGE_TYPES: require('../extension-protocol.js').MESSAGE_TYPES },
 		CineTraktStremioOpen: { sendRuntimeMessage(message, reply) { requests.push({ message, reply }); return true; } },
@@ -27,11 +27,19 @@ function externalRatingsRetryFixture() {
 		clearTimeout(id) { timers.delete(id); },
 	});
 	vm.runInContext(traktRatingsSource.replace('globalThis.CineTraktTraktRatings = api;',
-		'globalThis.getRatings = getCinetraktExternalRatings;'), context);
-	return { get: context.getRatings, requests, reasons, location, timers,
+		'globalThis.getRatings = getCinetraktExternalRatings; globalThis.testApi = api;'), context);
+	return { get: context.getRatings, api: context.testApi, requests, reasons, location, timers,
 		runRetry() { const [id, timer] = [...timers][0]; timers.delete(id); now += timer.delay; timer.callback(); },
 	};
 }
+
+test('ratings prefetch begins before the native summary exists and requests are shared across updates', () => {
+	const f = externalRatingsRetryFixture(); f.location.pathname = '/shows/reacher';
+	f.api.setControlsEnabled({ toggleEnabled: true, popupEnabled: true });
+	assert.equal(f.requests.length, 2, 'cards and seasons load independently of the native row');
+	f.api.setControlsEnabled({ toggleEnabled: true, popupEnabled: true });
+	assert.equal(f.requests.length, 2, 'DOM updates reuse in-flight requests');
+});
 
 test('a temporary ratings rejection retries automatically on a quiet page and then keeps its cards cached', () => {
 	const f = externalRatingsRetryFixture();
@@ -343,7 +351,7 @@ function assertOrdered(scripts, files) {
 }
 
 test('Trakt dependencies and feature modules load before the entry point', () => {
-	const scripts = getContentScripts('https://app.trakt.tv/*');
+	const scripts = getContentScripts('https://app.trakt.tv/*', 'document_end');
 	const earlyScripts = getContentScripts('https://app.trakt.tv/*', 'document_start');
 	assertOrdered(earlyScripts, ['settings.js', 'poster-layout-utils.js', 'trakt-bootstrap.js']);
 	assert.equal(scripts.includes('settings.js'), false);
@@ -383,7 +391,7 @@ test('IMDb dependencies and feature modules load before the entry point', () => 
 });
 
 test('Spotify bridge protocol loads in both communicating frames', () => {
-	const traktScripts = getContentScripts('https://app.trakt.tv/*');
+	const traktScripts = getContentScripts('https://app.trakt.tv/*', 'document_end');
 	const spotifyScripts = getContentScripts('https://open.spotify.com/embed*');
 	assert.ok(traktScripts.indexOf('spotify-protocol.js') < traktScripts.indexOf('trakt-soundtrack.js'));
 	assert.ok(traktScripts.indexOf('trakt-soundtrack-library.js') >= 0);

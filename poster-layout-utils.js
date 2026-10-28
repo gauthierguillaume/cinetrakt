@@ -5,6 +5,29 @@
 	const MIN_STICKY_RIGHT_CONTENT_WIDTH = 360;
 	const STICKY_RIGHT_PADDING = 12;
 
+	function getPosterAspectRatio(image) {
+		// Native geometry is available before the image bytes arrive. Loading a
+		// larger version of the same poster must never delay or resize the rail.
+		const rect = image?.getBoundingClientRect?.();
+		if (rect?.width > 0 && rect?.height > 0) return rect.width / rect.height;
+		for (const [width, height] of [[image?.width, image?.height], [image?.naturalWidth, image?.naturalHeight]]) {
+			if (width > 0 && height > 0) return width / height;
+		}
+		return 2 / 3;
+	}
+
+	function getDetailedPosterUrl(source) {
+		try {
+			const url = new URL(source);
+			if (url.origin !== 'https://media.trakt.tv' || url.search || url.hash || url.username || url.password
+				|| !/^\/images\/(movies|shows)\/\d{3}\/\d{3}\/\d{3}\/posters\/(thumb|medium|original)\/[a-z0-9_.-]+$/i.test(url.pathname)) return '';
+			// Only use sizes Trakt actually supplies. An "original" URL cannot be
+			// invented from medium: some current CDN images have no such variant.
+			url.pathname = url.pathname.replace('/thumb/', '/medium/');
+			return url.href;
+		} catch { return ''; }
+	}
+
 	function getViewportWidth(...values) {
 		const widths = values.filter((value) => Number.isFinite(value) && value > 0);
 		return widths.length ? Math.floor(Math.min(...widths)) : 0;
@@ -39,6 +62,8 @@
 		MIN_BOOTSTRAP_VIEWPORT_WIDTH,
 		MIN_STICKY_RIGHT_CONTENT_WIDTH,
 		STICKY_RIGHT_PADDING,
+		getPosterAspectRatio,
+		getDetailedPosterUrl,
 		getViewportWidth,
 		canBootstrapStickyLayout,
 		getRightContentWidth,

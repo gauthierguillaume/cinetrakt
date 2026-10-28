@@ -10,7 +10,27 @@ const {
 	getRightContentWidth,
 	getViewportWidth,
 	getStickyPosterSize,
+	getPosterAspectRatio,
+	getDetailedPosterUrl,
 } = require('../poster-layout-utils.js');
+
+test('poster geometry does not depend on network completion or a successful image decode', () => {
+	assert.equal(getPosterAspectRatio({ complete: false, naturalWidth: 0, naturalHeight: 0,
+		getBoundingClientRect: () => ({ width: 300, height: 450 }) }), 2 / 3);
+	assert.equal(getPosterAspectRatio({ width: 400, height: 600 }), 2 / 3);
+	assert.equal(getPosterAspectRatio({ naturalWidth: 800, naturalHeight: 1200 }), 2 / 3);
+	assert.equal(getPosterAspectRatio({ naturalWidth: 0, naturalHeight: 0 }), 2 / 3);
+});
+
+test('detail posters promote native thumbnails without inventing unavailable originals or external sources', () => {
+	const url = 'https://media.trakt.tv/images/shows/000/155/536/posters/medium/c15067608d.jpg.webp';
+	assert.equal(getDetailedPosterUrl(url.replace('/medium/', '/thumb/')), url);
+	assert.equal(getDetailedPosterUrl(url), url);
+	const original = url.replace('/medium/', '/original/');
+	assert.equal(getDetailedPosterUrl(original), original);
+	for (const invalid of [url + '?token=x', url + '#x', url.replace('media.trakt.tv', 'other.test'),
+		url.replace('/posters/', '/fanarts/'), 'javascript:alert(1)', '']) assert.equal(getDetailedPosterUrl(invalid), '');
+});
 
 test('viewport measurements use the smallest positive browser value', () => {
 	assert.equal(getViewportWidth(1280, 1278, 1260), 1260);

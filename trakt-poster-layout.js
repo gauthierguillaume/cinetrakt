@@ -10,6 +10,8 @@
 		getRightListInnerWidth,
 		getStickyPosterSize,
 		getViewportWidth,
+		getPosterAspectRatio,
+		getDetailedPosterUrl,
 	} = globalThis.CineTraktPosterLayoutUtils;
 	let cinetraktStickyPosterState = null;
 	let cinetraktStickyPosterResizeTimer = null;
@@ -868,6 +870,20 @@ function scheduleCinetraktStickyPosterBoundsCorrection(state, imageRatio, bottom
 	});
 }
 
+function prepareCinetraktPosterImage(image) {
+	if (!image) return;
+	image.loading = 'eager';
+	image.fetchPriority = 'high';
+	const source = image.getAttribute('src');
+	const detailed = getDetailedPosterUrl(source);
+	if (!detailed || detailed === source || image.srcset || image.dataset.cinetraktPosterQualitySource === source) return;
+	image.dataset.cinetraktPosterQualitySource = source;
+	image.addEventListener('error', () => {
+		if (image.getAttribute('src') === detailed) image.src = source;
+	}, { once: true });
+	image.src = detailed;
+}
+
 function updateCinetraktStickyPosterLayout(state) {
 	const { summaryContainer, posterContainer, posterStage, rail } = state;
 	if (!summaryContainer.isConnected
@@ -884,13 +900,13 @@ function updateCinetraktStickyPosterLayout(state) {
 	syncCinetraktPosterBorderRadius(state);
 	syncCinetraktPosterDecorationOverflow(state);
 	const posterImage = state.posterImage;
+	prepareCinetraktPosterImage(posterImage);
 	if (!posterImage?.complete || !posterImage.naturalWidth || !posterImage.naturalHeight) {
 		const pendingSource = posterImage?.currentSrc || posterImage?.src || window.location.pathname;
 		if (posterImage && posterImage.dataset.watchOnStremioPosterLoadSource !== pendingSource) {
 			posterImage.dataset.watchOnStremioPosterLoadSource = pendingSource;
 			posterImage.addEventListener('load', () => scheduleCinetraktStickyPosterLayoutUpdate(0), { once: true });
 		}
-		return;
 	}
 
 	const controlsHeight = state.controlsEntry?.element?.getBoundingClientRect().height || 0;
@@ -977,20 +993,17 @@ function setupWatchOnStremioPosterSize() {
 	if (!summaryContainer || !posterContainer || !posterImage || !mainContent) return;
 	if (posterContainer.parentElement !== summaryContainer) return;
 	if (!findCinetraktStickyPosterControls(summaryContainer)) return;
+	prepareCinetraktPosterImage(posterImage);
 	if (!posterImage.complete || !posterImage.naturalWidth || !posterImage.naturalHeight) {
 		const pendingSource = posterImage.currentSrc || posterImage.src || routeKey;
 		if (posterImage.dataset.watchOnStremioPosterLoadSource !== pendingSource) {
 			posterImage.dataset.watchOnStremioPosterLoadSource = pendingSource;
 			posterImage.addEventListener('load', () => scheduleCinetraktStickyPosterLayoutUpdate(0), { once: true });
 		}
-		return;
 	}
 
 	const originalPosterRect = posterContainer.getBoundingClientRect();
-	const originalPosterImageRect = posterImage.getBoundingClientRect();
-	const posterAspectRatio = originalPosterImageRect.width > 0 && originalPosterImageRect.height > 0
-		? originalPosterImageRect.width / originalPosterImageRect.height
-		: posterImage.naturalWidth / posterImage.naturalHeight;
+	const posterAspectRatio = getPosterAspectRatio(posterImage);
 	const metrics = getCinetraktStickyPosterMetrics({
 		summaryContainer,
 		posterImage,

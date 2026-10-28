@@ -846,6 +846,10 @@ function setupWatchOnStremioTraktMoreRatingsToggle() {
 	if (popupButton) globalThis.CineTraktSeasonChart.updateButton(popupButton, seasonRatings);
 
 	const ratingCards = updateCinetraktRatingCards();
+	const ratingsRequest = cinetraktExternalRatings.get(window.location.pathname);
+	if (!ratingsToggleEnabled || ratingCards || (ratingsRequest && Number.isFinite(ratingsRequest.expiresAt))) {
+		summaryRatings.dataset.cinetraktRatingsReady = 'true';
+	}
 	if (popupButton || ratingCards) {
 		const placementAnchor = getWatchOnStremioRatingsPopupPlacementAnchor(summaryRatings);
 		const popupRow = ensureWatchOnStremioRatingsPopupRow(placementAnchor);
@@ -904,6 +908,10 @@ function resetTraktRatingsControls() {
 			cinetraktRatingColorsEnabled = nextEnabled;
 		},
 		setControlsEnabled({ toggleEnabled, popupEnabled }) {
+			// Start in parallel with Trakt's summary, rather than waiting for the
+			// native inline row to mount before asking the worker for its tiles.
+			if (toggleEnabled) getCinetraktExternalRatings();
+			if (popupEnabled) getCinetraktExternalRatings(true);
 			if (toggleEnabled || popupEnabled) setupWatchOnStremioTraktMoreRatingsToggle();
 			else resetTraktRatingsControls();
 		},

@@ -1,3 +1,12 @@
+/* Reserve the final tiles' height before the native ratings arrive. Only that
+   row is concealed, with a bounded fail-open in the document-start bootstrap. */
+html.cinetrakt-rating-cards-enabled .trakt-summary-ratings {
+	min-height: 110px;
+}
+html.cinetrakt-ratings-pending .trakt-summary-ratings:not([data-cinetrakt-ratings-ready]) {
+	visibility: hidden;
+}
+
 html.cinetrakt-poster-layout-enabled {
 	--cinetrakt-early-poster-width: clamp(
 		280px,

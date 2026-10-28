@@ -55,7 +55,7 @@ test('missing or ambiguous collections never fall back to another list', () => {
 
 test('collection selection is loaded before the Trakt customization script', () => {
 	const manifest = require('../manifest.json');
-	const scripts = manifest.content_scripts.find((entry) => entry.matches.includes('https://app.trakt.tv/*') && entry.run_at === 'document_idle').js;
+	const scripts = manifest.content_scripts.find((entry) => entry.matches.includes('https://app.trakt.tv/*') && entry.run_at === 'document_end').js;
 	assert.ok(scripts.indexOf('trakt-collection-utils.js') >= 0);
 	assert.ok(scripts.indexOf('trakt-collection-utils.js') < scripts.indexOf('trakt-customizations.js'));
 });

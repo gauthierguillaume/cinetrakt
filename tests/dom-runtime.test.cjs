@@ -157,6 +157,24 @@ test('continuous page mutations cannot postpone an update beyond one second', as
 	runtime.stop();
 });
 
+test('the first native summary bypasses debounce, while unrelated updates remain batched', async () => {
+	const harness = createEnvironment(); let updates = 0;
+	const runtime = createRuntime({ environment: harness.environment, ownedMarker: /^cinetrakt/,
+		mutationDelay: 180, immediateMutationSelector: '.trakt-summary-container' });
+	runtime.start(() => { updates++; }); await harness.advance(0);
+	harness.mutate([{ target: element('native'), addedNodes: [element('review')] }]);
+	await harness.advance(0); assert.equal(updates, 1);
+	await harness.advance(180); assert.equal(updates, 2);
+	for (const nested of [false, true]) {
+		const node = { ...element('native'), matches: () => !nested, querySelector: () => nested ? {} : null };
+		harness.mutate([{ target: element('native'), addedNodes: [node] }]);
+		assert.equal(updates, nested ? 4 : 3, 'first layout is prepared in the observer, before a browser paint');
+		await harness.advance(0);
+	}
+	assert.equal(updates, 4, 'direct and nested summaries are both prepared immediately');
+	runtime.stop(); assert.equal(harness.timerCount, 0);
+});
+
 test('native mutations do not delay an immediate settings update and stop cancels all work', async () => {
 	const harness = createEnvironment(); const updates = [];
 	const runtime = createRuntime({ environment: harness.environment, ownedMarker: /^cinetrakt/, subscribeToSettings: true });

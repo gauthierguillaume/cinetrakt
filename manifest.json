@@ -46,7 +46,7 @@
       ]
     },
     {
-      "run_at": "document_idle",
+      "run_at": "document_end",
       "js": [
         "rating-utils.js",
         "extension-protocol.js",

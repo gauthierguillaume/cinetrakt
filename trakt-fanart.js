@@ -85,7 +85,20 @@
 	}
 	function align(state) {
 		const left = Number.parseFloat(getComputedStyle(state.main).getPropertyValue('--watch-on-stremio-sticky-content-left'));
-		if (Number.isFinite(left) && left > 0) state.layer.style.left = `${left}px`;
+		if (!Number.isFinite(left) || left <= 0) return false;
+		state.layer.style.left = `${left}px`;
+		return true;
+	}
+	function mount(state) {
+		if (!state.loaded || state.mounted || !align(state)) return;
+		// A fixed body layer must wait for the content boundary, but its metadata
+		// and image can load in parallel with the poster's layout preparation.
+		document.body.appendChild(state.layer); state.mounted = true;
+		state.main.classList.add('cinetrakt-fanart-ready'); document.body.classList.add('cinetrakt-fanart-active');
+		if (typeof ResizeObserver === 'function') {
+			state.resizeObserver = new ResizeObserver(() => { if (current === state) align(state); });
+			state.resizeObserver.observe(state.main);
+		}
 	}
 	async function load(state, attempt = 0) {
 		const url = await readFanart(state.route);
@@ -95,18 +108,13 @@
 			return;
 		}
 		const layer = document.createElement('div'); layer.className = 'cinetrakt-detail-fanart'; layer.setAttribute('aria-hidden', 'true');
-		const image = document.createElement('img'); image.alt = ''; image.decoding = 'async'; image.draggable = false;
+		const image = document.createElement('img'); image.alt = ''; image.decoding = 'async'; image.draggable = false; image.fetchPriority = 'high';
 		state.layer = layer; state.image = image;
 		image.addEventListener('load', () => {
 			if (current !== state || window.location.pathname !== state.route || !state.main.isConnected) return;
 			// Main has layout containment for responsive lists, which would anchor
 			// a fixed child to the scrolling page. Keep this viewport layer on body.
-			align(state); document.body.appendChild(layer);
-			state.main.classList.add('cinetrakt-fanart-ready'); document.body.classList.add('cinetrakt-fanart-active');
-			if (typeof ResizeObserver === 'function') {
-				state.resizeObserver = new ResizeObserver(() => { if (current === state) align(state); });
-				state.resizeObserver.observe(state.main);
-			}
+			state.loaded = true; mount(state);
 		}, { once: true });
 		image.addEventListener('error', () => {
 			// Keep this route settled on failure, rather than retrying the same
@@ -117,9 +125,10 @@
 	}
 	function update(enabled) {
 		const route = window.location.pathname;
-		const main = enabled && targetForRoute(route) && document.querySelector('main.cinetrakt-sticky-poster-detail-page');
+		const main = enabled && targetForRoute(route) && document.querySelector('main:has(.trakt-summary-container)');
 		if (current && (!main || current.route !== route || current.main !== main)) cleanup();
-		if (!main || current) return;
+		if (!main) return;
+		if (current) { mount(current); return; }
 		ensureStyles(); current = { route, main }; load(current);
 	}
 	const api = Object.freeze({ update, cleanup, readFanart, fanartFromEntry });
