@@ -60,6 +60,7 @@ test('settings load normalized values and private credentials on extension pages
 	assert.equal(values.traktStremioLinks, false);
 	assert.equal(values.traktRatingColors, true);
 	assert.equal(values.traktHideReactions, true);
+	assert.equal(values.traktArtworkSwitcher, true);
 	assert.equal(values.stremioStreamAppearance, true);
 	assert.equal('unknownFeature' in values, false);
 	assert.equal(harness.settings.getTmdbCredential(), 'secret-token');
@@ -125,7 +126,7 @@ test('every Trakt option belongs to a clear popup subcategory', () => {
 		.filter((feature) => feature.group === 'Trakt');
 	const categories = new Set(traktFeatures.map((feature) => feature.category));
 
-	assert.equal(traktFeatures.length, 13);
+	assert.equal(traktFeatures.length, 14);
 	assert.deepEqual(
 		[...categories].sort(),
 		['Affichage des fiches', 'Lecture et Stremio', 'Navigation', 'Notes et IMDb'].sort(),

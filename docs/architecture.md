@@ -209,6 +209,22 @@ runtime with the selectors and timing appropriate to each site.
   Disabling the feature
   restores native CSS without cleaning up measurements or persistent layout state.
 
+- `tmdb-artwork.js` / `trakt-artwork.js`: image variants on the large movie/show
+  poster, independently switchable in appearance settings. The worker resolves
+  the exact public Trakt TMDB ID and requests movie or TV details with images
+  appended, without a language filter or season endpoints. Credentials stay in
+  the worker, using the existing local TMDB setting; only public image paths
+  return to the matching top-level fiche. Catalogs share pending work, expire
+  after six hours and are bounded to 50 entries; changing the credential clears
+  them. No artwork request runs at page load. Original Latin-script titles keep
+  their original poster language; other scripts use English. Backdrops must
+  explicitly have a null image language, TMDB's textless classification, which
+  depends on contributor metadata. Shuffle bags exclude the current image and
+  recycle only after exhaustion. Original-size images preload before replacing
+  an overlay, leaving the native poster, watched status, Stremio targets and
+  colored background intact. `trakt-fanart.js` owns the fixed backdrop layer and
+  rejects late native results after an override. Disabling restores native
+  artwork; navigation/reload resets choices. Cleanup cancels pending image loads.
 - `trakt-season-selector.js`: an independent, reversible desktop seasons option.
   It mounts the native SeasonPosterList before the native episode rail and
   prepares that slot from the first layout. Season picks update both

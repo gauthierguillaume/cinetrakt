@@ -104,7 +104,7 @@
 	}
 	async function load(state, attempt = 0) {
 		const url = await readFanart(state.route);
-		if (current !== state || window.location.pathname !== state.route || !state.main.isConnected) return;
+		if (current !== state || state.overridden || window.location.pathname !== state.route || !state.main.isConnected) return;
 		if (!url) {
 			// Trakt can persist its successful query after the visible summary.
 			// Check early, then allow that delayed write without giving up at 3s.
@@ -115,17 +115,32 @@
 		const image = document.createElement('img'); image.alt = ''; image.decoding = 'async'; image.draggable = false; image.fetchPriority = 'high';
 		state.layer = layer; state.image = image;
 		image.addEventListener('load', () => {
-			if (current !== state || window.location.pathname !== state.route || !state.main.isConnected) return;
+			if (current !== state || state.image !== image || window.location.pathname !== state.route || !state.main.isConnected) return;
 			// Main has layout containment for responsive lists, which would anchor
 			// a fixed child to the scrolling page. Keep this viewport layer on body.
 			state.loaded = true; mount(state);
 		}, { once: true });
 		image.addEventListener('error', () => {
+			if (current !== state || state.image !== image) return;
 			// Keep this route settled on failure, rather than retrying the same
 			// broken image on every native DOM update.
 			layer.remove(); if (current === state) state.main.classList.remove('cinetrakt-fanart-ready');
 		}, { once: true });
 		layer.appendChild(image); image.src = url;
+	}
+	function setOverride(route, image) {
+		const state = current;
+		if (!state || state.route !== route || window.location.pathname !== route || !state.main.isConnected
+			|| !image?.complete || !image.naturalWidth
+			|| !/^https:\/\/image\.tmdb\.org\/t\/p\/original\/[a-z0-9_-]+\.(?:jpe?g|png|webp)$/i.test(image.src)) return false;
+		window.clearTimeout(state.timer); state.overridden = true;
+		if (!state.layer) {
+			state.layer = document.createElement('div'); state.layer.className = 'cinetrakt-detail-fanart';
+			state.layer.setAttribute('aria-hidden', 'true');
+		}
+		state.image?.removeAttribute('src');
+		state.layer.replaceChildren(image); state.image = image; state.loaded = true;
+		mount(state); return true;
 	}
 	function update(enabled) {
 		const route = window.location.pathname;
@@ -135,7 +150,7 @@
 		if (current) { mount(current); return; }
 		ensureStyles(); current = { route, main }; load(current);
 	}
-	const api = Object.freeze({ update, cleanup, readFanart, fanartFromEntry });
+	const api = Object.freeze({ update, cleanup, readFanart, fanartFromEntry, setOverride });
 	globalThis.CineTraktTraktFanart = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

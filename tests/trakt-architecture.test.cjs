@@ -404,7 +404,7 @@ test('Spotify bridge protocol loads in both communicating frames', () => {
 });
 
 test('site entry points only coordinate their feature modules', () => {
-	assert.ok(traktEntrySource.split(/\r?\n/).length < 80);
+	assert.ok(traktEntrySource.split(/\r?\n/).length < 85);
 	assert.match(traktEntrySource, /CineTraktTraktRuntime\?\.start\(updateFeatures\)/);
 	assert.match(traktEntrySource, /posterLayout\.setEnabled/);
 	assert.match(traktEntrySource, /soundtrack\.update/);

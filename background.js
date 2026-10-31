@@ -1,6 +1,7 @@
 importScripts("settings.js", "extension-protocol.js", "stremio-url.js", "trakt-imdb-resolver.js", "window-layout.js");
 importScripts('season-rating-utils.js');
 importScripts('episode-rating-utils.js', 'imdb-episode-loader.js');
+importScripts('tmdb-utils.js', 'tmdb-artwork.js');
 globalThis.CineTraktImdbEpisodeLoader.start();
 const { getSeasonRatingsUrl, parseSeasonRatings, parseSeasonPosters, parseSeasonDetails } = globalThis.CineTraktSeasonRatings;
 
@@ -18,6 +19,7 @@ const {
 	findExternalRatingsInTraktResponse,
 } = globalThis.CineTraktTraktImdbResolver;
 const { MESSAGE_TYPES } = globalThis.CineTraktExtensionProtocol;
+let loadDetailArtwork;
 
 const STREMIO_WEB_WINDOW_KEY = "watchOnStremioWebWindowId";
 const STREMIO_SOURCE_STATE_KEY = "cinetraktStremioSourceState";
@@ -419,6 +421,16 @@ async function resolveTraktImdbId(pathname) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message?.type === MESSAGE_TYPES.GET_DETAIL_ARTWORK) {
+		if (!globalThis.CineTraktTmdbArtwork.isAllowedRequest(message.pathname, sender)) {
+			sendResponse({ ok: false }); return false;
+		}
+		loadDetailArtwork ||= globalThis.CineTraktTmdbArtwork.createLoader({
+			settings: globalThis.CineTraktSettings, resolver: globalThis.CineTraktTraktImdbResolver,
+		});
+		loadDetailArtwork(message.pathname).then(sendResponse);
+		return true;
+	}
 	if (message?.type === MESSAGE_TYPES.GET_TRAKT_RATINGS || message?.type === MESSAGE_TYPES.GET_SHOW_SEASON_RATINGS) {
 		// sender.url can retain the document's initial URL across Trakt's SPA
 		// navigation. The browser tab URL tracks the currently displayed fiche.

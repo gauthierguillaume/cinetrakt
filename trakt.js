@@ -33,6 +33,7 @@
 
 		globalThis.CineTraktTraktFanart?.update(isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		posterLayout.setEnabled(isFeatureEnabled('traktPosterLayout') && isDetailPage());
+		globalThis.CineTraktTraktArtwork?.update(isFeatureEnabled('traktArtworkSwitcher') && isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		globalThis.CineTraktSeasonSelector?.update(isFeatureEnabled('traktSeasonPosters'));
 		if (isFeatureEnabled('traktSoundtrack')) soundtrack.update();
 		else soundtrack.cleanup({ pause: false });
@@ -69,6 +70,7 @@
 		document.removeEventListener('pointerover', notifyPointerReturn);
 		soundtrack.cleanup({ pause: isFeatureEnabled('traktSoundtrack') });
 		posterLayout.cleanup();
+		globalThis.CineTraktTraktArtwork?.cleanup({ restore: false });
 		globalThis.CineTraktTraktFanart?.cleanup();
 		globalThis.CineTraktImdbPanel?.cleanup();
 		globalThis.CineTraktSeasonSelector?.cleanup();

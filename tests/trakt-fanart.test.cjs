@@ -43,7 +43,8 @@ function fixture() {
 		window: { location, setTimeout(fn) { const id = ++nextTimer; timers.set(id, fn); return id; }, clearTimeout: id => timers.delete(id) },
 		document: { body, head: { appendChild() {} }, getElementById: () => true, querySelector: () => main,
 			createElement(tag) { const n = { tag, style: {}, listeners: {}, children: [], removed: false, setAttribute() {}, removeAttribute() {},
-				addEventListener(type, fn) { this.listeners[type] = fn; }, appendChild(c) { this.children.push(c); }, remove() { this.removed = true; } };
+					addEventListener(type, fn) { this.listeners[type] = fn; }, appendChild(c) { this.children.push(c); },
+					replaceChildren(...children) { this.children = children; }, remove() { this.removed = true; } };
 				nodes.push(n); return n; },
 		} });
 	const source = fs.readFileSync(require.resolve('../trakt-fanart.js'), 'utf8').replace('await readFanart(state.route)', 'await readTestFanart(state.route)');
@@ -62,6 +63,29 @@ test('fanart loads before poster placement, but only appears once the correct co
 	assert.equal(f.body.children.length, 1); assert.equal(f.pending.length, 1);
 	assert.equal(f.body.children[0].style.left, '666px', 'the 72px fade ends at the poster edge, before the text');
 	assert.equal(f.main.classes.has('cinetrakt-fanart-ready'), true);
+});
+
+test('a preloaded TMDB override survives a late native cache result and never touches the native color background', async () => {
+	const f = fixture(); f.api.update(true);
+	const image = { src: 'https://image.tmdb.org/t/p/original/backdrop.jpg', complete: true, naturalWidth: 3840, removeAttribute() {} };
+	assert.equal(f.api.setOverride('/shows/other', image), false);
+	assert.equal(f.api.setOverride('/shows/slow-horses', { ...image, src: 'https://evil.test/image.jpg' }), false);
+	assert.equal(f.api.setOverride('/shows/slow-horses', image), true);
+	assert.equal(f.body.children.length, 1); assert.equal(f.body.children[0].children[0], image);
+	f.pending[0](url); await new Promise(setImmediate);
+	assert.equal(f.body.children[0].children[0], image, 'the native query must not replace a user-selected backdrop');
+	f.api.update(true); assert.equal(f.pending.length, 1);
+	f.api.cleanup(); assert.equal(f.body.classes.size, 0);
+});
+
+test('an old native image error cannot remove a newer TMDB backdrop', async () => {
+	const f = fixture(); f.api.update(true); f.pending[0](url); await new Promise(setImmediate);
+	const old = f.nodes.find(n => n.tag === 'img');
+	const image = { src: 'https://image.tmdb.org/t/p/original/new.jpg', complete: true, naturalWidth: 1920, removeAttribute() {} };
+	assert.equal(f.api.setOverride('/shows/slow-horses', image), true);
+	old.listeners.error(); old.listeners.load();
+	assert.equal(f.body.children[0].children[0], image);
+	assert.equal(f.body.children[0].removed, false);
 });
 
 test('late image loads cannot put the previous film behind a new fiche, and disabling removes the artwork', async () => {
