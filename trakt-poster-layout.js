@@ -1,13 +1,10 @@
 (() => {
 	'use strict';
 	const CINETRAKT_STICKY_POSTER_RAIL_ID = 'cinetrakt-sticky-poster-rail';
-	const CINETRAKT_POSTER_TOP_REDUCTION = 24;
-	const CINETRAKT_POSTER_BOTTOM_SAFETY = 12;
-	const CINETRAKT_POSTER_SIDE_GAP = 16;
 	const CINETRAKT_CONTEXTUAL_PAIR_GAP = 16;
 	const {
 		canUseStickyLayout,
-		getRightListInnerWidth,
+		getRightContentWidth,
 		getStickyPosterSize,
 		getViewportWidth,
 		getPosterAspectRatio,
@@ -66,7 +63,9 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			main.cinetrakt-sticky-poster-detail-page {
 			padding-left: var(--watch-on-stremio-sticky-content-left) !important;
-			padding-right: 12px !important;
+			/* Native cards leave one list gap after the final complete card. Use
+			   that visible clearance around the fixed poster and content too. */
+			padding-right: calc(var(--layout-distance-side) + var(--list-gap)) !important;
 			/* Native lists bleed into Trakt's sidebar. Here the poster occupies
 			   that space, so their scroll viewport must start at the content rail. */
 			--list-bleed-start: 0px;
@@ -320,24 +319,11 @@ function injectWatchOnStremioPosterSizeStyles() {
 		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
 			main.cinetrakt-sticky-poster-detail-page .cinetrakt-sticky-right-section {
 			box-sizing: border-box !important;
-			margin: 0 0 0 calc(-1 * var(--layout-distance-side)) !important;
-			width: calc(100% + var(--layout-distance-side)) !important;
-			max-width: calc(100% + var(--layout-distance-side)) !important;
+			/* Retain native list/title insets on both sides, including Soundtrack. */
+			margin: 0 calc(-1 * var(--layout-distance-side)) !important;
+			width: calc(100% + 2 * var(--layout-distance-side)) !important;
+			max-width: calc(100% + 2 * var(--layout-distance-side)) !important;
 			min-width: 0 !important;
-		}
-
-		/* Keep the native trailing inset: Trakt's mask hides that space, and its
-		   card counts must use the remaining inner width rather than the viewport. */
-		html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact)
-			.cinetrakt-sticky-right-section .section-list-horizontal-scroll {
-			box-sizing: border-box !important;
-			width: 100% !important;
-			max-width: 100% !important;
-			padding-inline-end: var(--layout-distance-side) !important;
-			/* Fractional card sizing can put the next card just before the native
-			   mask. Its hover outline also extends outside its box. End the mask
-			   inside the trailing gap, with room for both (without hiding a card). */
-			--list-end-fade: calc(var(--layout-distance-side) + 4px) !important;
 		}
 
 		/* Trakt hides desktop overflow on drilldown lists. Keep every service
@@ -381,11 +367,10 @@ function injectWatchOnStremioPosterSizeStyles() {
 			.cinetrakt-sticky-right-footer {
 			box-sizing: border-box !important;
 			margin-left: var(--watch-on-stremio-sticky-content-left) !important;
-			width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 12px) !important;
-			max-width: calc(100% - var(--watch-on-stremio-sticky-content-left) - 12px) !important;
+			width: calc(100% - var(--watch-on-stremio-sticky-content-left)) !important;
+			max-width: calc(100% - var(--watch-on-stremio-sticky-content-left)) !important;
 			min-width: 0 !important;
-			padding-left: 48px !important;
-			padding-right: 12px !important;
+			padding-inline: 0 calc(var(--layout-distance-side) + var(--list-gap)) !important;
 		}
 
 		.cinetrakt-sticky-right-footer .trakt-footer-content,
@@ -693,9 +678,9 @@ function applyCinetraktStickyPosterDimensions(state, width, height) {
 		posterSideGap,
 	} = state;
 	const contentLeft = summaryLeft + width + posterSideGap;
-	const rightList = mainContent.querySelector('.cinetrakt-sticky-right-section .section-list-horizontal-scroll');
-	const nativeSideInset = rightList ? Number.parseFloat(getComputedStyle(rightList).paddingInlineEnd) : 24;
-	const listInnerWidth = getRightListInnerWidth(getCinetraktViewportWidth(), contentLeft, nativeSideInset);
+	// Native row padding cancels the section's bleed on both sides. Its usable
+	// width therefore matches the summary, with no second inset to subtract.
+	const listInnerWidth = getRightContentWidth(getCinetraktViewportWidth(), contentLeft, state.sideInset);
 	if (state.listInnerWidth !== listInnerWidth) {
 		state.listInnerWidth = listInnerWidth;
 		window.clearTimeout(state.listAlignmentTimer);
@@ -800,7 +785,6 @@ function getCinetraktStickyPosterMetrics({
 	summaryContainer,
 	posterImage,
 	posterAspectRatio,
-	posterTop,
 	posterDecorationOverflow = 0,
 	posterFooterHeight = 0,
 	summaryLeftFallback = 0,
@@ -817,13 +801,22 @@ function getCinetraktStickyPosterMetrics({
 	const imageRatio = Number.isFinite(posterAspectRatio) && posterAspectRatio > 0
 		? posterAspectRatio
 		: naturalImageRatio;
+	const nativeStyle = getComputedStyle(summaryContainer);
+	const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+	const nativeLength = (name, fallback) => {
+		const value = nativeStyle.getPropertyValue(name).trim();
+		return /^\d*\.?\d+(px|rem)$/.test(value)
+			? Number.parseFloat(value) * (value.endsWith('rem') ? rootFontSize : 1)
+			: fallback;
+	};
+	const sideInset = nativeLength('--layout-distance-side', 24) + nativeLength('--list-gap', 12);
 	const sidebarRect = document.querySelector('.trakt-side-navbar')?.getBoundingClientRect();
 	const sidebarRight = sidebarRect?.right;
 	const summaryLeft = Number.isFinite(sidebarRight) && sidebarRight > 0
-		? Math.max(0, Math.round(sidebarRight + CINETRAKT_POSTER_SIDE_GAP))
+		? Math.max(0, Math.round(sidebarRight + sideInset))
 		: summaryLeftFallback;
-	const resolvedPosterTop = Math.max(0, posterTop);
-	const posterBottomSafety = CINETRAKT_POSTER_BOTTOM_SAFETY;
+	const resolvedPosterTop = sideInset;
+	const posterBottomSafety = sideInset;
 	const availableHeight = Math.max(
 		1,
 		viewportHeight
@@ -833,16 +826,17 @@ function getCinetraktStickyPosterMetrics({
 			- posterFooterHeight,
 	);
 	const { width, height } = getStickyPosterSize(
-		getCinetraktViewportWidth(), summaryLeft, availableHeight, imageRatio, CINETRAKT_POSTER_SIDE_GAP,
+		getCinetraktViewportWidth(), summaryLeft, availableHeight, imageRatio, sideInset, sideInset,
 	);
-	const contentLeft = summaryLeft + width + CINETRAKT_POSTER_SIDE_GAP;
+	const contentLeft = summaryLeft + width + sideInset;
 
 	return {
 		contentLeft,
 		height,
 		imageRatio,
 		posterBottomSafety,
-		posterSideGap: CINETRAKT_POSTER_SIDE_GAP,
+		posterSideGap: sideInset,
+		sideInset,
 		posterTop: resolvedPosterTop,
 		summaryLeft,
 		viewportWidth: getCinetraktViewportWidth(),
@@ -915,20 +909,19 @@ function updateCinetraktStickyPosterLayout(state) {
 		summaryContainer,
 		posterImage,
 		posterAspectRatio: state.posterAspectRatio,
-		posterTop: state.posterTop,
 		posterDecorationOverflow: state.posterDecorationOverflow,
 		posterFooterHeight: controlsHeight + controlsGap,
 		summaryLeftFallback: state.summaryLeft,
 	});
-	const useStickyLayout = canUseStickyLayout(metrics.viewportWidth, metrics.contentLeft);
+	const useStickyLayout = canUseStickyLayout(metrics.viewportWidth, metrics.contentLeft, metrics.sideInset);
 	setCinetraktPosterLayoutMode(state, useStickyLayout);
 	if (!useStickyLayout) {
 		restoreCinetraktTriviaToNativeFlow(state);
 		return;
 	}
 	state.summaryLeft = metrics.summaryLeft;
-	state.posterTop = metrics.posterTop;
 	state.posterSideGap = metrics.posterSideGap;
+	state.sideInset = metrics.sideInset;
 	const railTop = Math.max(8, metrics.posterTop);
 
 	summaryContainer.style.setProperty('--watch-on-stremio-sticky-poster-left', `${metrics.summaryLeft}px`);
@@ -1008,7 +1001,6 @@ function setupWatchOnStremioPosterSize() {
 		summaryContainer,
 		posterImage,
 		posterAspectRatio,
-		posterTop: Math.max(8, originalPosterRect.top - CINETRAKT_POSTER_TOP_REDUCTION),
 		summaryLeftFallback: Math.max(0, originalPosterRect.left),
 	});
 	document.documentElement.classList.add('cinetrakt-poster-layout-enabled');
@@ -1048,8 +1040,8 @@ function setupWatchOnStremioPosterSize() {
 		boundsCorrectionFrame: null,
 		posterDecorationOverflow: 0,
 		summaryLeft: metrics.summaryLeft,
-		posterTop: metrics.posterTop,
 		posterSideGap: metrics.posterSideGap,
+		sideInset: metrics.sideInset,
 		posterAspectRatio,
 	};
 	if (typeof ResizeObserver === 'function') {

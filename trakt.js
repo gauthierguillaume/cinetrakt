@@ -18,6 +18,7 @@
 	async function updateFeatures() {
 		await globalThis.CineTraktSettings?.ready;
 		if (window.location.hostname !== 'app.trakt.tv') return;
+		globalThis.CineTraktHorizontalScroll?.sync();
 		globalThis.CineTraktImdbPanel?.sync(isFeatureEnabled('imdbEpisodeRatingsPopup'));
 		ratings.setControlsEnabled({
 			toggleEnabled: isFeatureEnabled('traktRatingsToggle'),
@@ -32,15 +33,14 @@
 
 		globalThis.CineTraktTraktFanart?.update(isFeatureEnabled('traktPosterLayout') && isDetailPage());
 		posterLayout.setEnabled(isFeatureEnabled('traktPosterLayout') && isDetailPage());
+		globalThis.CineTraktSeasonSelector?.update(isFeatureEnabled('traktSeasonPosters'));
 		if (isFeatureEnabled('traktSoundtrack')) soundtrack.update();
 		else soundtrack.cleanup({ pause: false });
-
 		customizations.update({
 			collectionEnabled: isFeatureEnabled('traktCollectionCard'),
 			navigationCleanupEnabled: isFeatureEnabled('traktNavigationCleanup'),
 			hideReactionsEnabled: isFeatureEnabled('traktHideReactions'),
 		});
-
 		ratings.setColorsEnabled(isFeatureEnabled('traktRatingColors'));
 	}
 
@@ -71,6 +71,7 @@
 		posterLayout.cleanup();
 		globalThis.CineTraktTraktFanart?.cleanup();
 		globalThis.CineTraktImdbPanel?.cleanup();
+		globalThis.CineTraktSeasonSelector?.cleanup();
 	}, { once: true });
 
 	globalThis.CineTraktTraktRuntime?.start(updateFeatures);

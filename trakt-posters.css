@@ -1,5 +1,5 @@
 /* Keep watched artwork as clear as unwatched artwork. Preserve Trakt's
    watched state, indicators, menus and unrelated disabled-control styles. */
-trakt-default-media-item.is-deemphasized .trakt-card-cover-image {
+html.cinetrakt-clear-watched-posters trakt-default-media-item.is-deemphasized .trakt-card-cover-image {
 	opacity: 1 !important;
 }

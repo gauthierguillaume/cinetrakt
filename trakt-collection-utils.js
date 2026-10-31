@@ -40,6 +40,22 @@
 		} catch { return ''; }
 	}
 
+	function collectionItemCount(value) {
+		const text = String(value || '').trim();
+		if (!/^[\d\s,]+$/.test(text)) return 0;
+		const count = Number(text.replace(/[\s,]/g, ''));
+		return Number.isSafeInteger(count) && count > 0 && count <= 2000 ? count : 0;
+	}
+
+	function collectionLayout({ count, width, cardWidth, cardHeight, columnGap, rowGap, headerHeight, padding }) {
+		if (!Number.isInteger(count) || count < 1 || count > 2000
+			|| ![width, cardWidth, cardHeight, headerHeight].every(value => Number.isFinite(value) && value > 0)
+			|| ![columnGap, rowGap, padding].every(value => Number.isFinite(value) && value >= 0)) return null;
+		const columns = Math.max(1, Math.floor((width - padding * 2 + columnGap) / (cardWidth + columnGap)));
+		const rows = Math.ceil(count / columns);
+		return { columns, rows, height: Math.ceil(headerHeight + rows * cardHeight + (rows - 1) * rowGap) };
+	}
+
 	function createCollectionLoader({ fetch: request, apiKey }) {
 		let pending;
 		return function load(pathname, href) {
@@ -84,7 +100,7 @@
 		};
 	}
 
-	const api = Object.freeze({ isOfficialMovieCollection, findUniqueOfficialMovieCollection, collectionPath, collectionNavigation, createCollectionLoader });
+	const api = Object.freeze({ isOfficialMovieCollection, findUniqueOfficialMovieCollection, collectionPath, collectionNavigation, collectionItemCount, collectionLayout, createCollectionLoader });
 	globalThis.CineTraktCollectionUtils = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

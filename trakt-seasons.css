@@ -1,0 +1,16 @@
+#cinetrakt-season-selector { margin-inline: var(--layout-distance-side, 24px); }
+html.cinetrakt-poster-layout-enabled:not(.cinetrakt-poster-layout-compact) #cinetrakt-season-selector { margin-inline: 0; }
+
+/* Hide the desktop dropdown before its first paint, not after the new row
+   finishes loading. Only the native episode rail has this combination. */
+@media (min-width: 769px) {
+	html.cinetrakt-season-posters-enabled svelte-css-wrapper[style*="--height-landscape-list"] > section:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has(> .trakt-list-inset-title a[href*="view=seasons"]):has(> .trakt-list-inset-title [role="combobox"]) > .trakt-list-inset-title,
+	.cinetrakt-season-episodes-replaced > .trakt-list-inset-title { display: none !important; }
+
+	html.cinetrakt-season-posters-enabled svelte-css-wrapper[style*="--height-landscape-list"] > section:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has(> .trakt-list-inset-title a[href*="view=seasons"]):has(> .trakt-list-inset-title [role="combobox"]),
+	.cinetrakt-season-episodes-replaced {
+		--height-container: var(--section-list-height) !important;
+		--height-min-container: 0px !important;
+		gap: 0 !important;
+	}
+}

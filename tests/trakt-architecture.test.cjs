@@ -457,20 +457,15 @@ test('poster integration preserves native Trakt href values', () => {
 	assert.doesNotMatch(traktPosterSource, /state\.rail\.insertBefore\((?:attachedControls|controls), state\.posterStage\)/);
 	assert.match(traktPosterSource, /posterFooterHeight:\s*controlsHeight \+ controlsGap/);
 	assert.match(traktPosterSource, /const railTop = Math\.max\(8, metrics\.posterTop\)/);
-	assert.match(traktPosterSource, /originalPosterRect\.top - CINETRAKT_POSTER_TOP_REDUCTION/);
-	assert.match(traktPosterSource, /const CINETRAKT_POSTER_BOTTOM_SAFETY = 12/);
+	assert.match(traktPosterSource, /const resolvedPosterTop = sideInset/);
 	assert.match(traktPosterSource, /const contentLeft = summaryLeft \+ width \+ posterSideGap/);
-	assert.match(traktPosterSource, /getRightListInnerWidth\(getCinetraktViewportWidth\(\), contentLeft, nativeSideInset\)/);
+	assert.match(traktPosterSource, /getRightContentWidth\(getCinetraktViewportWidth\(\), contentLeft, state\.sideInset\)/);
 	assert.match(traktPosterSource, /document\.documentElement\.style\.setProperty\('--list-inner-width'/);
 	assert.match(traktPosterSource, /document\.documentElement\.style\.removeProperty\('--list-inner-width'\)/);
-	assert.match(traktPosterSource, /\.cinetrakt-sticky-right-section \.section-list-horizontal-scroll/);
-	assert.match(traktPosterSource, /padding-inline-end:\s*var\(--layout-distance-side\)\s*!important/);
-	assert.match(traktPosterSource, /const CINETRAKT_POSTER_SIDE_GAP = 16/);
+	assert.doesNotMatch(traktPosterSource, /padding-inline-end:\s*4px|padding-right:\s*12px|CINETRAKT_POSTER_SIDE_GAP|CINETRAKT_POSTER_TOP_REDUCTION/);
+	assert.match(traktPosterSource, /padding-right:\s*calc\(var\(--layout-distance-side\) \+ var\(--list-gap\)\)/);
 	assert.doesNotMatch(traktPosterSource, /soundtrackCardRect|sidebarVisualRight/);
-	assert.match(traktPosterSource, /sidebarRight \+ CINETRAKT_POSTER_SIDE_GAP/);
-	assert.match(traktPosterSource, /const contentLeft = summaryLeft \+ width \+ CINETRAKT_POSTER_SIDE_GAP/);
-	assert.match(traktPosterSource, /posterSideGap:\s*CINETRAKT_POSTER_SIDE_GAP/);
-	assert.doesNotMatch(traktPosterSource, /summaryLeft \+ width \+ 32/);
+	assert.match(traktPosterSource, /sidebarRight \+ sideInset/);
 	assert.match(traktPosterSource, /\.trakt-summary-actions-slider\s*\{[\s\S]*?bottom:\s*100%\s*!important/);
 	assert.match(traktPosterSource, /clip-path:\s*inset\(-100vmax -100vmax 0 -100vmax\)\s*!important/);
 	assert.doesNotMatch(traktPosterSource, /cinetrakt-sticky-poster-image/);
@@ -733,7 +728,7 @@ test('the added collection follows the native summary row without displacing con
 	assert.match(traktCustomizationsSource, /grid-column: 1 \/ -1/);
 	const collectionStyles = traktCustomizationsSource.slice(traktCustomizationsSource.indexOf('function injectCinetraktCollectionCardStyles'), traktCustomizationsSource.indexOf('function findCinetraktCollectionInsertionTarget'));
 	assert.doesNotMatch(collectionStyles, /grid-template-columns:|grid-row:/);
-	assert.match(traktCustomizationsSource, /CineTraktCollectionSection.mount/);
+	assert.match(traktCustomizationsSource, /CineTraktNativeSection.mount/);
 	assert.doesNotMatch(traktCustomizationsSource, /cloneNode|readCollectionWatched|cinetrakt-collection-watched|GET_COLLECTION_ITEMS/);
 });
 
@@ -741,8 +736,11 @@ test('native collection documents keep their own handlers without running extens
 	const manifest = require('../manifest.json');
 	const scripts = manifest.content_scripts.find(entry => entry.run_at === 'document_end' && entry.matches.includes('https://app.trakt.tv/*'));
 	assert.equal(scripts.all_frames, undefined);
-	assert.ok(scripts.js.indexOf('trakt-collection-section.js') < scripts.js.indexOf('trakt-customizations.js'));
-	const nativeSource = fs.readFileSync(require.resolve('../trakt-collection-section.js'), 'utf8');
+	const early = manifest.content_scripts.find(entry => entry.js?.includes('trakt-season-selector.js'));
+	assert.equal(early.run_at, 'document_start');
+	assert.ok(early.js.indexOf('trakt-native-section.js') < early.js.indexOf('trakt-season-selector.js'));
+	assert.equal(scripts.js.includes('trakt-native-section.js'), false);
+	const nativeSource = fs.readFileSync(require.resolve('../trakt-native-section.js'), 'utf8');
 	assert.doesNotMatch(nativeSource, /cloneNode|innerHTML|indexedDB\.(?:open|databases)|fetch\(|localStorage|sessionStorage/);
 	assert.match(nativeSource, /frame.contentDocument/);
 	assert.match(nativeSource, /observer\?\.disconnect\(\)/);

@@ -74,6 +74,17 @@ test('content pages never request the private TMDB credential', async () => {
 	assert.equal(harness.settings.getTmdbCredential(), '');
 });
 
+test('season posters and clear watched artwork are independently persisted appearance options', async () => {
+	const key = 'cinetrakt:feature-settings:v1';
+	const harness = loadSettings({ stored: { [key]: { traktSeasonPosters: false, traktClearWatchedPosters: false, traktCollectionCard: true } } });
+	const values = await harness.settings.ready;
+	assert.equal(values.traktSeasonPosters, false); assert.equal(values.traktClearWatchedPosters, false);
+	assert.equal(values.traktCollectionCard, true);
+	await harness.settings.save(values);
+	assert.equal(harness.writes[0][key].traktSeasonPosters, false);
+	assert.equal(harness.writes[0][key].traktClearWatchedPosters, false);
+});
+
 test('storage read failures fall back to defaults without rejecting readiness', async () => {
 	const harness = loadSettings({ getError: 'Extension context invalidated.' });
 	const values = await harness.settings.ready;
@@ -114,7 +125,7 @@ test('every Trakt option belongs to a clear popup subcategory', () => {
 		.filter((feature) => feature.group === 'Trakt');
 	const categories = new Set(traktFeatures.map((feature) => feature.category));
 
-	assert.equal(traktFeatures.length, 10);
+	assert.equal(traktFeatures.length, 13);
 	assert.deepEqual(
 		[...categories].sort(),
 		['Affichage des fiches', 'Lecture et Stremio', 'Navigation', 'Notes et IMDb'].sort(),

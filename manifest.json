@@ -14,6 +14,13 @@
       "run_at": "document_start",
       "all_frames": true,
       "world": "MAIN",
+      "js": ["trakt-seasons-native.js"],
+      "matches": ["https://app.trakt.tv/shows/*"]
+    },
+    {
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN",
       "js": ["trakt-collection-utils.js", "trakt-collection-native.js"],
       "matches": ["https://app.trakt.tv/movies/*"]
     },
@@ -21,12 +28,15 @@
       "run_at": "document_start",
       "css": [
         "theme.css",
-        "trakt-early.css"
+        "trakt-early.css",
+        "trakt-seasons.css"
       ],
       "js": [
         "settings.js",
         "poster-layout-utils.js",
-        "trakt-bootstrap.js"
+        "trakt-bootstrap.js",
+        "trakt-native-section.js",
+        "trakt-season-selector.js"
       ],
       "matches": [
         "https://app.trakt.tv/*"
@@ -35,7 +45,8 @@
     {
       "run_at": "document_start",
       "all_frames": true,
-      "css": ["trakt-posters.css"],
+			"css": ["trakt-posters.css", "trakt-horizontal-scroll.css"],
+			"js": ["settings.js", "trakt-appearance.js", "trakt-horizontal-scroll.js"],
       "matches": ["https://app.trakt.tv/*"]
     },
     {
@@ -82,7 +93,6 @@
         "trakt-soundtrack-library.js",
         "trakt-soundtrack.js",
         "trakt-collection-utils.js",
-        "trakt-collection-section.js",
         "trakt-customizations.js",
         "trakt.js"
       ],

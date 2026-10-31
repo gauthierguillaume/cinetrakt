@@ -10,7 +10,7 @@
 		const target = targetForRoute(route);
 		if (!target || !Array.isArray(entry?.queryKey) || !entry.queryKey.includes(target.query) || !entry.queryKey.includes(target.dependency)
 			|| entry.state?.status !== 'success' || !Number.isFinite(entry.state.dataUpdatedAt)
-			|| now < entry.state.dataUpdatedAt || now - entry.state.dataUpdatedAt > 3 * 3600000) return '';
+			|| now < entry.state.dataUpdatedAt) return '';
 		try {
 			const url = new URL(entry.state.data?.cover?.url?.medium);
 			if (url.origin !== 'https://media.trakt.tv' || url.username || url.password || url.search || url.hash
@@ -106,7 +106,9 @@
 		const url = await readFanart(state.route);
 		if (current !== state || window.location.pathname !== state.route || !state.main.isConnected) return;
 		if (!url) {
-			if (attempt < 2) state.timer = window.setTimeout(() => load(state, attempt + 1), (attempt + 1) * 1000);
+			// Trakt can persist its successful query after the visible summary.
+			// Check early, then allow that delayed write without giving up at 3s.
+			if (attempt < 14) state.timer = window.setTimeout(() => load(state, attempt + 1), attempt < 2 ? 250 : 1000);
 			return;
 		}
 		const layer = document.createElement('div'); layer.className = 'cinetrakt-detail-fanart'; layer.setAttribute('aria-hidden', 'true');

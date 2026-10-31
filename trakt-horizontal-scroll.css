@@ -1,0 +1,48 @@
+/* The native variables resolve against the current fiche, including lazy cards.
+   No cached pixel masks, observers, or startup measurements are needed. */
+html.cinetrakt-horizontal-scroll .crossfade-content:has(> .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *))) {
+	container-type: inline-size;
+}
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)) {
+	--cinetrakt-row-start: var(--layout-distance-side, 24px);
+	--cinetrakt-row-end: var(--layout-distance-side, 24px);
+	overflow-x: auto !important;
+	scroll-snap-type: x mandatory !important;
+	scroll-behavior: auto !important;
+	scroll-padding-inline: var(--cinetrakt-row-start) var(--cinetrakt-row-end) !important;
+}
+html.cinetrakt-horizontal-scroll .cinetrakt-native-seasons-grid .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)) { --cinetrakt-row-start: 4px; --cinetrakt-row-end: 4px; }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has([style*="--width-card: var(--width-person-card)"]) { --cinetrakt-row-card: var(--width-person-card); }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has([style*="--width-card: var(--width-portrait-card)"]) { --cinetrakt-row-card: var(--width-portrait-card); }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has([style*="--width-card: var(--width-landscape-card)"]) { --cinetrakt-row-card: var(--width-landscape-card); }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has([style*="--width-card: var(--width-comment-card)"]) { --cinetrakt-row-card: var(--width-comment-card); }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):has([style*="--width-card: min(var(--width-list-card)"]) { --cinetrakt-row-card: min(var(--width-list-card), 85vw); }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)):is(:has([style*="--width-card: var(--width-person-card)"]), :has([style*="--width-card: var(--width-portrait-card)"]), :has([style*="--width-card: var(--width-landscape-card)"]), :has([style*="--width-card: var(--width-comment-card)"]), :has([style*="--width-card: min(var(--width-list-card)"])) {
+	--cinetrakt-row-space: calc(100cqw - var(--cinetrakt-row-start) - var(--cinetrakt-row-end));
+	--cinetrakt-row-count: max(1, round(down, calc((var(--cinetrakt-row-space) + var(--list-gap, 12px)) / (var(--cinetrakt-row-card) + var(--list-gap, 12px))), 1));
+	--cinetrakt-row-single: max(0, calc(2 - var(--cinetrakt-row-count)));
+	--cinetrakt-row-gap: max(var(--list-gap, 12px), calc((var(--cinetrakt-row-space) - var(--cinetrakt-row-count) * var(--cinetrakt-row-card)) / max(1, calc(var(--cinetrakt-row-count) - 1))));
+	column-gap: var(--cinetrakt-row-gap) !important;
+	padding-inline-end: calc(var(--cinetrakt-row-end) + var(--cinetrakt-row-single) * max(0px, calc(var(--cinetrakt-row-space) - var(--cinetrakt-row-card)))) !important;
+	/* The viewport now fits whole cards. These fixed inset masks only protect
+	   the poster rail and the 4px native hover outlines during movement. */
+	mask-image: linear-gradient(to right, transparent max(0px, calc(var(--cinetrakt-row-start) - 4px)), #000 max(0px, calc(var(--cinetrakt-row-start) - 4px)), #000 calc(100% - max(0px, calc(var(--cinetrakt-row-end) - 4px))), transparent calc(100% - max(0px, calc(var(--cinetrakt-row-end) - 4px)))) !important;
+}
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)) > *,
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)) > svelte-css-wrapper > * { scroll-snap-align: start !important; }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)) > :last-child:not(:first-child),
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll:not(:where(.trakt-drawer *, dialog *, [role="dialog"] *)) > svelte-css-wrapper:last-child:not(:first-child) > * { scroll-snap-align: end !important; }
+html.cinetrakt-horizontal-scroll,
+html.cinetrakt-horizontal-scroll * { scrollbar-width: none !important; }
+html.cinetrakt-horizontal-scroll::-webkit-scrollbar,
+html.cinetrakt-horizontal-scroll *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+html.cinetrakt-horizontal-scroll .section-list-horizontal-scroll.cinetrakt-row-dragging {
+	cursor: grabbing !important;
+	user-select: none !important;
+	scroll-behavior: auto !important;
+	scroll-snap-type: none !important;
+}
+html.cinetrakt-horizontal-scroll .cinetrakt-row-dragging * { cursor: grabbing !important; user-select: none !important; }
+
+/* Fiche drawers retain native spacing and masks, but their rows remain reachable. */
+html.cinetrakt-horizontal-scroll :is(.trakt-drawer, dialog, [role="dialog"], .cinetrakt-native-seasons-grid) .section-list-horizontal-scroll { overflow-x: auto !important; }

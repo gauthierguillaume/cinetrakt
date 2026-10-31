@@ -21,9 +21,9 @@ test('fanart is tied to the exact film or show and accepts only its official lan
 	assert.equal(fanart.fanartFromEntry(entry(url.replace('/medium/', '/thumb/')), '/shows/slow-horses'), url);
 });
 
-test('missing, expired or unsuccessful native metadata keeps the original background', async () => {
+test('public artwork remains usable from an older successful summary while Trakt refreshes it', async () => {
 	const cached = entry(); const now = cached.state.dataUpdatedAt;
-	assert.equal(fanart.fanartFromEntry(cached, '/shows/slow-horses', now + 4 * 3600000), '');
+	assert.equal(fanart.fanartFromEntry(cached, '/shows/slow-horses', now + 4 * 3600000), url);
 	cached.state.status = 'pending'; assert.equal(fanart.fanartFromEntry(cached, '/shows/slow-horses'), '');
 	assert.equal(fanart.fanartFromEntry(entry('https://app.trakt.tv/placeholder.webp'), '/shows/slow-horses'), '');
 	assert.equal(fanart.fanartFromEntry(null, '/shows/slow-horses'), '');
@@ -90,4 +90,27 @@ test('image failures settle on the native background and metadata retries are bo
 	assert.equal(f.timers.size, 1); f.api.cleanup(); assert.equal(f.timers.size, 0);
 	f.api.update(true); f.api.update(true); assert.equal(f.pending.length, 2, 'native mutations never duplicate in-flight reads');
 	f.api.cleanup(); f.pending[1](url); await new Promise(setImmediate); assert.equal(f.main.classes.size, 0);
+});
+
+test('a summary persisted after the first retries still loads, and a missing image eventually stops polling', async () => {
+	const f = fixture(); f.api.update(true);
+	for (let i = 0; i < 5; i++) {
+		f.pending[i](''); await new Promise(setImmediate);
+		const [id, callback] = f.timers.entries().next().value;
+		f.timers.delete(id); callback();
+	}
+	f.pending[5](url); await new Promise(setImmediate);
+	f.nodes.find(n => n.tag === 'img').listeners.load();
+	assert.equal(f.main.classes.has('cinetrakt-fanart-ready'), true);
+	assert.equal(f.timers.size, 0);
+	const absent = fixture(); absent.api.update(true);
+	for (let i = 0; i < 15; i++) {
+		absent.pending[i](''); await new Promise(setImmediate);
+		if (i < 14) {
+			const [id, callback] = absent.timers.entries().next().value;
+			absent.timers.delete(id); callback();
+		}
+	}
+	assert.equal(absent.pending.length, 15); assert.equal(absent.timers.size, 0);
+	absent.api.update(true); assert.equal(absent.pending.length, 15);
 });

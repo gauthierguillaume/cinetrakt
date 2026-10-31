@@ -32,18 +32,6 @@ function injectCinetraktCollectionCardStyles() {
 			grid-column: 1 / -1; width: 100%; min-width: 0;
 			margin: 0; padding: 0; background: transparent;
 		}
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-body { position: relative; min-height: 260px; }
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-native-collection-frame {
-			display: block; position: absolute; top: 0; left: 0; z-index: 2;
-			width: 100%; height: 260px; border: 0; background: transparent; color-scheme: dark;
-			visibility: hidden;
-		}
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-frame-ready { visibility: visible; }
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-modal {
-			position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100vh !important;
-			z-index: 10000 !important;
-		}
-		#${CINETRAKT_COLLECTION_HOST_ID} .cinetrakt-collection-fallback { color: var(--color-text-secondary); }
 	`;
 	document.head.appendChild(style);
 }
@@ -234,7 +222,7 @@ function placeCinetraktOfficialCollectionCard() {
 	const host = document.createElement('section'); host.id = CINETRAKT_COLLECTION_HOST_ID;
 	host.className = 'cinetrakt-collection-section'; host.dataset.cinetraktRoute = routeKey;
 	host.setAttribute('aria-label', title);
-	const body = document.createElement('div'); body.className = 'cinetrakt-collection-body';
+	const body = document.createElement('div'); body.className = 'cinetrakt-native-section-body';
 	host.appendChild(body);
 	restoreCinetraktCollectionRenderProbe();
 	const summaryContainer = insertionTarget.closest('.trakt-summary-container');
@@ -243,7 +231,8 @@ function placeCinetraktOfficialCollectionCard() {
 	if (summaryContainer) summaryContainer.appendChild(host);
 	else insertionTarget.insertAdjacentElement('afterend', host);
 	const state = { routeKey, host }; cinetraktCollectionPlacement = state;
-	state.dispose = globalThis.CineTraktCollectionSection.mount({ host: body, href, title, moviePath: routeKey,
+	state.dispose = globalThis.CineTraktNativeSection.mount({ host: body, href, title, route: routeKey,
+		portal: true, itemCount: globalThis.CineTraktCollectionUtils.collectionItemCount(collectionCard.querySelector('.count-item')?.textContent),
 		countNode: collectionCard.querySelector('.count-item') });
 }
 

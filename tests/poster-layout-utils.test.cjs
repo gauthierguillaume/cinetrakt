@@ -1,18 +1,49 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 
 const {
 	MIN_BOOTSTRAP_VIEWPORT_WIDTH,
 	MIN_STICKY_RIGHT_CONTENT_WIDTH,
 	canBootstrapStickyLayout,
 	canUseStickyLayout,
-	getRightListInnerWidth,
 	getRightContentWidth,
 	getViewportWidth,
 	getStickyPosterSize,
 	getPosterAspectRatio,
 	getDetailedPosterUrl,
 } = require('../poster-layout-utils.js');
+
+test('the fixed poster uses the native visible row clearance on every side, regardless of summary offsets', () => {
+	const source = fs.readFileSync(require.resolve('../trakt-poster-layout.js'), 'utf8');
+	const metricsFunction = source.slice(source.indexOf('function getCinetraktStickyPosterMetrics('),
+		source.indexOf('function scheduleCinetraktStickyPosterBoundsCorrection('));
+	for (const fontSize of [16, 20]) {
+		const root = { clientHeight: 1000 };
+		const summary = {};
+		const context = vm.createContext({
+			document: { documentElement: root, querySelector: () => ({ getBoundingClientRect: () => ({ right: 192 }) }) },
+			window: { innerHeight: 1000, visualViewport: { height: 1000 } },
+			getComputedStyle: element => element === root ? { fontSize: `${fontSize}px` } : {
+				columnGap: '32px', paddingTop: '38px',
+				getPropertyValue: name => ({ '--layout-distance-side': '1.5rem', '--list-gap': '.75rem' })[name] || '',
+			},
+			getCinetraktViewportWidth: () => 2372, getStickyPosterSize,
+		});
+		vm.runInContext(metricsFunction, context);
+		const metrics = context.getCinetraktStickyPosterMetrics({ summaryContainer: summary,
+			posterImage: { naturalWidth: 1000, naturalHeight: 1500 }, posterAspectRatio: 2 / 3,
+			posterFooterHeight: 112, posterDecorationOverflow: 10 });
+		const clearance = fontSize * 2.25;
+		assert.equal(metrics.posterTop, clearance);
+		assert.equal(metrics.summaryLeft - 192, clearance);
+		assert.equal(metrics.contentLeft - metrics.summaryLeft - metrics.width, clearance);
+		assert.equal(metrics.sideInset, clearance);
+		assert.equal(metrics.posterBottomSafety, clearance);
+		assert.ok(metrics.posterTop + metrics.height + 112 + 10 <= 1000 - clearance);
+	}
+});
 
 test('poster geometry does not depend on network completion or a successful image decode', () => {
 	assert.equal(getPosterAspectRatio({ complete: false, naturalWidth: 0, naturalHeight: 0,
@@ -45,51 +76,40 @@ test('sticky layout only starts on a genuinely wide viewport', () => {
 
 test('sticky poster preserves enough width for Trakt responsive content', () => {
 	const viewportWidth = 1280;
-	const contentLeft = viewportWidth - 12 - MIN_STICKY_RIGHT_CONTENT_WIDTH;
+	const contentLeft = viewportWidth - 36 - MIN_STICKY_RIGHT_CONTENT_WIDTH;
 
 	assert.equal(getRightContentWidth(viewportWidth, contentLeft), MIN_STICKY_RIGHT_CONTENT_WIDTH);
-	assert.equal(getRightListInnerWidth(viewportWidth, contentLeft), MIN_STICKY_RIGHT_CONTENT_WIDTH - 24);
 	assert.equal(canUseStickyLayout(viewportWidth, contentLeft), true);
 	assert.equal(canUseStickyLayout(viewportWidth, contentLeft + 1), false);
 	assert.equal(canUseStickyLayout(900, 100), false);
 });
 
-test('native card sizing leaves complete cards before the trailing list mask', () => {
-	for (const viewportWidth of [1280, 1440, 1660, 1899, 2293]) {
-		for (const sideInset of [16, 24, 32]) {
-			const contentLeft = 758;
-			const area = getRightContentWidth(viewportWidth, contentLeft);
-			const inner = getRightListInnerWidth(viewportWidth, contentLeft, sideInset);
-			for (const minimum of [120, 132, 200, 340]) {
-				const gap = 12;
-				const count = Math.max(1, Math.floor(inner / (minimum + gap)));
-				const cardWidth = Math.max(minimum, inner / count - gap);
-				const finalCardRight = count * cardWidth + (count - 1) * gap;
-				assert.ok(finalCardRight <= area - sideInset, 'last complete card must precede the mask');
-				assert.ok(finalCardRight + gap >= area - sideInset - 0.01, 'next card starts under the mask');
-				// Browser zoom rounds the carousel and individual cards separately.
-				// Include both that subpixel difference and the native hover outline.
-				for (const fractionalRemainder of [0, 0.5, 0.99]) {
-					const maskEdge = area + fractionalRemainder - sideInset - 4;
-					const outline = 8 / 3;
-					assert.ok(finalCardRight + outline < maskEdge, 'last visible hover outline stays complete');
-					assert.ok(finalCardRight + gap - outline > maskEdge, 'next hover outline stays hidden');
-				}
-			}
+test('native spacing reserves readable content at desktop, split-window and scaled sizes', () => {
+	for (const viewportWidth of [1024, 1100, 1280, 1440, 2372]) {
+		for (const sideInset of [24, 36, 45, 48]) {
+			const posterLeft = 192 + sideInset;
+			const gap = sideInset;
+			const size = getStickyPosterSize(viewportWidth, posterLeft, 800, 2 / 3, gap, sideInset);
+			const contentLeft = posterLeft + size.width + gap;
+			const inner = getRightContentWidth(viewportWidth, contentLeft, sideInset);
+			assert.ok(inner >= MIN_STICKY_RIGHT_CONTENT_WIDTH);
+			assert.equal(canUseStickyLayout(viewportWidth, contentLeft, sideInset), true);
+			assert.ok(contentLeft + inner <= viewportWidth - sideInset);
+			assert.ok(size.height <= 800);
 		}
 	}
 });
 
 test('a 1440p split window keeps a full-height poster and stacks the right content', () => {
-	const size = getStickyPosterSize(1280, 208, 800, 2 / 3);
+	const size = getStickyPosterSize(1280, 228, 800, 2 / 3);
 	assert.equal(size.width, 533);
 	assert.ok(size.height >= 799);
-	assert.equal(canUseStickyLayout(1280, 208 + size.width + 16), true);
+	assert.equal(canUseStickyLayout(1280, 228 + size.width + 36), true);
 });
 
 test('narrow desktop windows reduce the poster gradually while reserving readable content', () => {
-	const size = getStickyPosterSize(1100, 208, 800, 2 / 3);
-	assert.equal(size.width, 504);
-	assert.equal(size.height, 756);
-	assert.equal(getRightContentWidth(1100, 208 + size.width + 16), 360);
+	const size = getStickyPosterSize(1100, 228, 800, 2 / 3);
+	assert.equal(size.width, 440);
+	assert.equal(size.height, 660);
+	assert.equal(getRightContentWidth(1100, 228 + size.width + 36), 360);
 });

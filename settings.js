@@ -1,5 +1,6 @@
 (() => {
 	'use strict';
+	if (globalThis.CineTraktSettings) return;
 
 	const STORAGE_KEY = 'cinetrakt:feature-settings:v1';
 	const TMDB_CREDENTIAL_KEY = 'cinetrakt:tmdb-credential:v1';
@@ -12,6 +13,9 @@
 		traktSoundtrack: true,
 		traktSoundtrackAutoplay: true,
 		traktCollectionCard: true,
+		traktSeasonPosters: true,
+		traktHorizontalScroll: true,
+		traktClearWatchedPosters: true,
 		traktNavigationCleanup: true,
 		traktHideReactions: true,
 		imdbTraktButton: true,
@@ -30,6 +34,9 @@
 		{ key: 'imdbEpisodeRatingsPopup', group: 'Trakt', category: 'Notes et IMDb', title: 'Notes IMDb par épisode', description: 'Affiche la courbe des notes Trakt par saison. Le survol montre les pourcentages ; un clic ouvre les notes IMDb des épisodes dans un panneau Trakt.' },
 		{ key: 'traktPosterLayout', group: 'Trakt', category: 'Affichage des fiches', title: 'Grande affiche', description: 'Agrandit l’affiche et active la mise en page détaillée de CineTrakt.' },
 		{ key: 'traktCollectionCard', group: 'Trakt', category: 'Affichage des fiches', title: 'Collection officielle', description: 'Place la collection officielle directement sous le synopsis du film.' },
+		{ key: 'traktSeasonPosters', group: 'Trakt', category: 'Affichage des fiches', title: 'Pochettes des saisons', description: 'Affiche le sélecteur natif de saisons avec ses pochettes au-dessus des épisodes, même sur grand écran. Désactiver conserve la présentation habituelle de Trakt.' },
+		{ key: 'traktHorizontalScroll', group: 'Trakt', category: 'Navigation', title: 'Défilement des fiches', description: 'Uniquement dans les fiches de films et de séries : fait glisser les rangées et celles de leurs panneaux avec le clic gauche maintenu, et masque les barres de défilement. Les panneaux gardent leur présentation native. L’accueil et les autres pages ne sont pas modifiés. La molette, le clavier et les clics habituels restent disponibles.' },
+		{ key: 'traktClearWatchedPosters', group: 'Trakt', category: 'Affichage des fiches', title: 'Affiches vues sans assombrissement', description: 'Conserve les affiches des films et séries déjà vus à pleine luminosité, avec leurs repères vu. Désactiver rétablit l’assombrissement de Trakt.' },
 		{ key: 'traktNavigationCleanup', group: 'Trakt', category: 'Navigation', title: 'Navigation simplifiée', description: 'Masque Library et Shared dans la barre latérale de Trakt.' },
 		{ key: 'traktHideReactions', group: 'Trakt', category: 'Affichage des fiches', title: 'Masquer les réactions à côté d’Activities', description: 'Masque uniquement le bloc de réactions du film ou de la série, à gauche d’Activities et au-dessus du synopsis. Conserve les réactions des reviews et des autres sections.' },
 		{ key: 'imdbTraktButton', group: 'IMDb', title: 'Bouton Trakt', description: 'Ajoute le logo Trakt et ouvre la fiche correspondante depuis IMDb.' },

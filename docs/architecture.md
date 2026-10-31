@@ -47,6 +47,10 @@ second time at `document_idle`.
   use the matching blue-violet palette. Rating bands and source/size colors retain
   their semantic palettes.
 - `settings.js`: definitions, defaults, local persistence, and live change events.
+- `trakt-appearance.js` and `trakt-posters.css`: a live, independent preference for
+  full-opacity watched artwork. The small settings/appearance pair runs in Trakt
+  subframes too; the idempotent settings bootstrap avoids duplicate subscriptions
+  in the top page. Native watched state and indicators are preserved.
 - `extension-protocol.js`: shared message names used by pages and the service worker.
 - `dom-runtime.js`: serialized DOM updates, mutation filtering, route detection, and cleanup.
 - `rating-utils.js`: the fixed rating palette, formatting, averages, parsing, and star fill ratios.
@@ -151,11 +155,80 @@ runtime with the selectors and timing appropriate to each site.
   An embed that has not sent READY after eight seconds gets one reload per selected
   entity, only while playback is requested in the visible tab. READY, manual pause,
   route cleanup and background handoff cancel that watchdog.
-- `trakt-customizations.js`: official collection card placement and sidebar navigation cleanup.
+- `trakt-customizations.js`: official collection category placement and sidebar navigation cleanup.
+- `trakt-native-section.js`: shared hosting for live native collection and season
+  components. The native app keeps its handlers; cards are never cloned. Popup
+  space is reserved without resizing on menu open. Native drawers use the page
+  viewport while a clipped union preserves the live row and main-page scrolling.
+  Collections reserve their complete wrapped height from native card dimensions
+  and the official item count before their frame loads. The scoped crossfade
+  shows only the populated layer: an outgoing skeleton cannot temporarily double
+  the measured height. Both sections omit loading text; collection requests start
+  while the embedded native app boots and are shared with its Related Movies query.
+  Ready portals use document coordinates rather than fixed viewport positions, so normal
+  scrolling needs no JavaScript repositioning. Preloads stay fixed in the viewport
+  until their cards are ready, even if the main page restores a deep scroll position.
+  Only open viewport drawers follow
+  scrolling. Native rows can prepare before the full iframe load event once the detail
+  component exists; lazy card mounting itself must not gate preparation.
+  The existing parent resize observer also watches the native summary container,
+  keeping the absolute portal aligned when fonts or late summary data change its height.
+  If Trakt replaces a lazy section, the previous isolation path is restored,
+  including each sibling's original inline display value. Detached sections
+  cannot retain hidden ancestors that would prevent the replacement mounting.
+  Season placeholders are first positioned in the viewport without isolating
+  their app branch. Isolation begins only after real season cards mount, avoiding
+  interference with native lazy rendering during startup.
+- `trakt-horizontal-scroll.js` and its stylesheet: an independent settings-backed
+  horizontal scrolling option, coupled with hidden horizontal/vertical scrollbars
+  only on film/show detail routes. Navigation API and popstate updates remove its
+  root CSS gate on home, profiles, lists, search and other routes; the main runtime
+  also synchronizes that gate as a fallback. Delegated gestures use a direction/threshold guard, allow
+  native review-preview buttons, leave other controls and modified/middle/right
+  clicks native, and suppress only the click concluding a drag.
+  JavaScript performs no startup card scans or layout reads and creates no observers.
+  Only a user's drag reads card geometry to align release to a card start or the
+  physical end, keeping the last item accessible.
+  CSS derives the whole-card count and spacing from the crossfade container and
+  Trakt's native card-width variables, so lazy loading, SPA navigation and size
+  changes cannot leave stale pixel masks. Inset masks only protect native outlines
+  and the poster rail. Known portrait/person/landscape/comment/list card families
+  use this sizing; other native controls retain their own dimensions. Native drawers
+  and dialogs are explicitly excluded from sizing, custom snapping and masks.
+  Their rows allow mouse dragging with native snapping and layout, only while
+  opened from an eligible fiche. Disabling removes the route-gated CSS entirely.
+  Detail layout uses one visible clearance, Trakt's `--layout-distance-side`
+  plus the trailing `--list-gap` left after its last complete card (36px at
+  the default scale). The same value sets the poster's top/sidebar clearance,
+  the poster-to-content gap, bottom safety and content's right edge.
+  Sections bleed equally into both
+  native insets, so Soundtrack, carousels and the summary share their content
+  edges without reduced right padding. Card sizing uses the content width
+  without subtracting a second inset. The original summary's top position and
+  independent grid/sidebar gaps are not reused around the fixed poster.
+  Disabling the feature
+  restores native CSS without cleaning up measurements or persistent layout state.
+
+- `trakt-season-selector.js`: an independent, reversible desktop seasons option.
+  It mounts the native SeasonPosterList before the native episode rail and
+  prepares that slot from the first layout. Season picks update both
+  native routers; the section is reused for the same show and disposed on route
+  changes, disabling or return to the native small-screen layout.
+  Its native document preloads at document start in a stable body portal, in
+  parallel with the main app. The empty layout host can move before the episode
+  rail without resetting that document. Early CSS suppresses the old dropdown;
+  reserved native list dimensions prevent a delayed header swap or extra gap.
+  Seasons never display a loading label. A fifteen-second startup deadline restores native controls with
+  no repeated preload loop, and single-season shows retain the native layout.
+- `trakt-seasons-native.js`: runs only in the marked same-origin season document.
+  It selects the native small-tablet rendering guard without changing its real
+  viewport, card sizes, APIs or parent-page media queries. This lets Trakt render
+  its official season cards on wide displays without reconstructing them.
 - `trakt-imdb-cache.js`: deduplicated, expiring Trakt-to-IMDb lookup cache in `localStorage`.
 
-All modules expose a frozen API on `globalThis`. Only `trakt.js` decides which
-features run, based on `CineTraktSettings`.
+Modules expose frozen APIs on `globalThis`. `trakt.js` coordinates ongoing
+features and route updates. The document-start appearance and season preloads
+use the same `CineTraktSettings`, so there is no second set of preferences.
 
 `trakt-fanart.js` adds a decorative landscape background to the enlarged detail
 layout, beginning at its existing content-left boundary after the poster rail.
@@ -167,7 +240,9 @@ the content boundary. The native poster-color gradient remains unchanged under
 the transparent artwork. A dark overlay and edge fades preserve contrast; narrow layouts
 keep their native background. Route changes, disabled poster layout, missing
 artwork and image failures restore the original treatment. Initial cache retries
-are bounded and cancelled on cleanup; late loads cannot attach to another title.
+start at 250 ms and remain bounded to accommodate delayed native persistence;
+they are cancelled on cleanup. Older successful public image metadata remains
+usable while Trakt refreshes its summary. Late loads cannot attach to another title.
 
 ## IMDb Modules
 

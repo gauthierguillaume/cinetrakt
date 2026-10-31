@@ -20,6 +20,9 @@
 	}
 	const originalFetch = window.fetch.bind(window);
 	const load = createCollectionLoader({ fetch: originalFetch, apiKey: frame.dataset.cinetraktCollectionApiKey });
+	// Fetch the official metadata and items while Trakt boots, rather than
+	// starting that chain only once its lazy Related Movies asks for data.
+	const pendingCollection = load(location.pathname, path);
 	const relatedPath = `${location.pathname.replace(/\/$/, '')}/related`;
 	window.fetch = async (input, init) => {
 		let url;
@@ -28,7 +31,7 @@
 		if (!['https://api.trakt.tv', 'https://apiz.trakt.tv'].includes(url.origin) || url.pathname !== relatedPath
 			|| String(init?.method || input?.method || 'GET').toUpperCase() !== 'GET') return originalFetch(input, init);
 		frame.dataset.cinetraktCollectionState = 'loading';
-		const movies = await load(location.pathname, path);
+		const movies = await pendingCollection;
 		if (!movies?.length) {
 			frame.dataset.cinetraktCollectionState = 'unavailable';
 			return new Response('[]', { headers: { 'content-type': 'application/json', 'x-pagination-page-count': '1' } });

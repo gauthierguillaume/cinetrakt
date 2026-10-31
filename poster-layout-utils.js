@@ -3,7 +3,8 @@
 
 	const MIN_BOOTSTRAP_VIEWPORT_WIDTH = 1024;
 	const MIN_STICKY_RIGHT_CONTENT_WIDTH = 360;
-	const STICKY_RIGHT_PADDING = 12;
+	// Native outer inset (24px) plus the trailing list gap (12px).
+	const STICKY_RIGHT_PADDING = 36;
 
 	function getPosterAspectRatio(image) {
 		// Native geometry is available before the image bytes arrive. Loading a
@@ -37,25 +38,20 @@
 		return Number(viewportWidth) >= MIN_BOOTSTRAP_VIEWPORT_WIDTH;
 	}
 
-	function getRightContentWidth(viewportWidth, contentLeft) {
-		return Math.max(0, Math.floor(Number(viewportWidth) - Number(contentLeft) - STICKY_RIGHT_PADDING));
+	function getRightContentWidth(viewportWidth, contentLeft, sideInset = STICKY_RIGHT_PADDING) {
+		return Math.max(0, Math.floor(Number(viewportWidth) - Number(contentLeft) - sideInset));
 	}
 
-	function getRightListInnerWidth(viewportWidth, contentLeft, nativeSideInset = 24) {
-		// Native card counts exclude the trailing inset covered by the list mask.
-		return Math.max(0, getRightContentWidth(viewportWidth, contentLeft) - nativeSideInset);
-	}
-
-	function getStickyPosterSize(viewportWidth, posterLeft, availableHeight, imageRatio, sideGap = 16) {
+	function getStickyPosterSize(viewportWidth, posterLeft, availableHeight, imageRatio, sideGap = STICKY_RIGHT_PADDING, sideInset = STICKY_RIGHT_PADDING) {
 		const maximumWidth = Math.max(1, viewportWidth - posterLeft - sideGap
-			- STICKY_RIGHT_PADDING - MIN_STICKY_RIGHT_CONTENT_WIDTH);
+			- sideInset - MIN_STICKY_RIGHT_CONTENT_WIDTH);
 		const width = Math.max(1, Math.min(Math.floor(availableHeight * imageRatio), Math.floor(maximumWidth)));
 		return { width, height: Math.min(Math.floor(availableHeight), Math.floor(width / imageRatio)) };
 	}
 
-	function canUseStickyLayout(viewportWidth, contentLeft) {
+	function canUseStickyLayout(viewportWidth, contentLeft, sideInset = STICKY_RIGHT_PADDING) {
 		return canBootstrapStickyLayout(viewportWidth)
-			&& getRightContentWidth(viewportWidth, contentLeft) >= MIN_STICKY_RIGHT_CONTENT_WIDTH;
+			&& getRightContentWidth(viewportWidth, contentLeft, sideInset) >= MIN_STICKY_RIGHT_CONTENT_WIDTH;
 	}
 
 	const api = Object.freeze({
@@ -67,7 +63,6 @@
 		getViewportWidth,
 		canBootstrapStickyLayout,
 		getRightContentWidth,
-		getRightListInnerWidth,
 		getStickyPosterSize,
 		canUseStickyLayout,
 	});

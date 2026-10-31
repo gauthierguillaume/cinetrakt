@@ -12,6 +12,16 @@ test('Trakt integration uses only the current web app and official API origins',
 	assert.equal(manifest.host_permissions.includes('https://trakt.tv/*'), false);
 });
 
+test('native section frames receive appearance preferences without recursively starting page features', () => {
+	const appearance = manifest.content_scripts.find(entry => entry.js?.includes('trakt-appearance.js'));
+	assert.equal(appearance.all_frames, true); assert.equal(appearance.run_at, 'document_start');
+	assert.deepEqual(appearance.js, ['settings.js', 'trakt-appearance.js', 'trakt-horizontal-scroll.js']);
+	const seasons = manifest.content_scripts.find(entry => entry.js?.includes('trakt-seasons-native.js'));
+	assert.equal(seasons.world, 'MAIN'); assert.equal(seasons.all_frames, true);
+	assert.deepEqual(seasons.matches, ['https://app.trakt.tv/shows/*']);
+	assert.equal(manifest.content_scripts.find(entry => entry.js?.includes('trakt.js')).all_frames, undefined);
+});
+
 function assertLocalFileExists(file) {
 	assert.equal(fs.existsSync(path.join(root, file)), true, `${file} does not exist`);
 }
